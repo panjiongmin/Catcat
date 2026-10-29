@@ -1,6 +1,7 @@
 import { Accounts, randomId, type Player } from './accounts';
 import { Street } from './street';
-import { starterCats } from '../src/game/data';
+import { starterCats, BREEDS } from '../src/game/data';
+import { ADULT_AGE } from '../src/game/rules';
 import type { Cat } from '../src/game/types';
 import type { Hello, StreetInfo } from '../src/net/protocol';
 
@@ -25,11 +26,14 @@ function adoptLocal(pid: string, local: unknown): { cats: Cat[]; coins: number }
   const base = starterCats();
   const l = local as { coins?: number; cats?: Partial<Cat>[] } | null;
   const src = Array.isArray(l?.cats) && l!.cats!.length ? l!.cats!.slice(0, 6) : base;
+  const now = Date.now();
   const cats = src.map((c, i) => {
-    const b = base[i % base.length];
+    const b = base[i % base.length], coat = COAT_OK.has(String(c.coat)) ? c.coat! : b.coat;
+    // a cat saved before growth stages existed is grown up
+    const born = c === b ? b.born : Number.isFinite(Number(c.born)) ? Math.min(now, Number(c.born)) : now - ADULT_AGE;
     return {
-      ...b, id: `${pid}-${i}`, name: String(c.name ?? b.name).slice(0, 8), breed: String(c.breed ?? b.breed).slice(0, 8),
-      coat: COAT_OK.has(String(c.coat)) ? c.coat! : b.coat, pers: PERS_OK.has(String(c.pers)) ? c.pers! : b.pers,
+      ...b, id: `${pid}-${i}`, name: String(c.name ?? b.name).slice(0, 8), breed: BREEDS[coat], coat, born,
+      pers: PERS_OK.has(String(c.pers)) ? c.pers! : b.pers,
       lv: Math.max(1, Math.min(99, Number(c.lv) || b.lv)),
       mood: n100(c.mood, b.mood), health: n100(c.health, b.health), food: n100(c.food, b.food), clean: n100(c.clean, b.clean),
       x: 300 + Math.random() * 2800, y: 500 + Math.random() * 48, pets: [],

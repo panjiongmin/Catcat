@@ -1,6 +1,7 @@
 // Plain data shapes shared by the game, the save and the server (no DOM types here).
 export type CoatId = 'calico' | 'maine' | 'lihua';
 export type PersId = 'lively' | 'cool' | 'lazy';
+export type StageId = 'kitten' | 'junior' | 'adult' | 'senior';
 export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn' | 'sit' | 'sleep' | 'eat' | 'pet';
 
 export interface Cat {
@@ -10,6 +11,8 @@ export interface Cat {
   coat: CoatId;
   pers: PersId;
   lv: number;
+  /** Birth time (ms); the growth stage follows from it. */
+  born: number;
   mood: number;
   health: number;
   food: number;

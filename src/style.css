@@ -51,9 +51,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2E6FD1; out
 
 /* Dock */
 .dock { position: absolute; left: 0; right: 0; bottom: 0; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); pointer-events: none; }
-.dock-inner { pointer-events: auto; margin: 0 auto; max-width: 720px; display: flex; gap: 8px; overflow-x: auto; padding: 10px; background: var(--paper); border: 2px solid var(--line); border-radius: 24px; box-shadow: 0 5px 0 rgba(74,59,51,.15); scrollbar-width: none; }
+.dock-inner { pointer-events: auto; margin: 0 auto; width: fit-content; max-width: min(720px, 100%); display: flex; gap: 8px; overflow-x: auto; padding: 10px; background: var(--paper); border: 2px solid var(--line); border-radius: 24px; box-shadow: 0 5px 0 rgba(74,59,51,.15); scrollbar-width: none; }
 .dock-inner::-webkit-scrollbar { display: none; }
-.dock-cat { flex: 1 0 128px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border: 2px solid transparent; border-radius: 18px; background: #FFF8EE; cursor: pointer; text-align: left; color: var(--ink); min-height: 60px; }
+.dock-cat { flex: 0 0 168px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border: 2px solid transparent; border-radius: 18px; background: #FFF8EE; cursor: pointer; text-align: left; color: var(--ink); min-height: 60px; }
 .dock-cat:hover { border-color: var(--line); }
 .dock-cat.on { border-color: var(--orange); background: #FFEFD9; }
 .dock-cat .pt { width: 46px; height: 46px; flex: none; object-fit: contain; }
@@ -79,6 +79,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2E6FD1; out
 .tag.t1 { background: #FFE3CC; color: #9A4A0E; }
 .tag.t2 { background: #E2F3E8; color: #2F6B47; }
 .tag.t3 { background: #E7F1FB; color: #2E5E8C; }
+.tag.t4 { background: #FCE4EC; color: #A23B5E; }
+.p-grow { font-size: 12px; color: var(--ink-soft); margin-top: -4px; }
+.p-grow:empty { display: none; }
 .p-note { grid-column: 1 / -1; margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
 .p-status { font-size: 14px; line-height: 1.6; padding: 10px 12px; border-radius: 14px; background: #FFF8EE; }
 .bars { display: grid; gap: 8px; }
@@ -153,7 +156,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2E6FD1; out
   .chip { height: 34px; font-size: 14px; padding: 0 12px 0 6px; }
   .zoom { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 104px); transform: none; }
   .zoom button { width: 42px; height: 42px; border-radius: 14px; font-size: 20px; }
-  .dock-cat { flex-basis: 112px; }
+  .dock-cat { flex-basis: 140px; }
   .panel { padding: 16px; gap: 12px; }
   .p-name { font-size: 24px; }
   .p-head .pt { width: 64px; height: 64px; border-radius: 18px; }

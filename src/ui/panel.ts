@@ -1,5 +1,5 @@
 import { cats, buildings, strays, state, online, nowMs, isMine, myCats, ownerName, PERS_NAME, type Cat, type Stray } from '../game/data';
-import { bump, GAIN, PRICES, PET_MAX, petGain, tryPet } from '../game/rules';
+import { bump, GAIN, PRICES, PET_MAX, petGain, playGain, tryPet, stageOf, growsIn, STAGES } from '../game/rules';
 import { save } from '../game/save';
 import { send } from '../net/online';
 import type { CareAct, S2C } from '../net/protocol';
@@ -65,15 +65,27 @@ const petLeft = (c: Cat) => {
   return n > 0 ? `心情 +${petGain(c)} · 还能 ${n} 次` : '摸够了，过会儿再来';
 };
 
+function span(ms: number) {
+  const h = Math.ceil(ms / 3.6e6);
+  return h >= 48 ? `${Math.round(h / 24)} 天` : h >= 24 ? `1 天 ${h - 24} 小时` : `${h} 小时`;
+}
+/** Growth line: what this stage means and how long until the next one. */
+function growText(c: Cat) {
+  const now = nowMs(), s = stageOf(c, now), i = STAGES.indexOf(s), left = growsIn(c, now);
+  const next = left ? `再过 ${span(left)}长成${STAGES[i + 1].name}` : '';
+  return [next, s.note].filter(Boolean).join(' · ');
+}
+
 function renderCatPanel(c: Cat) {
   const mine = isMine(c);
   panel().innerHTML = `<button class="p-close" aria-label="关闭">×</button>
-<div class="p-head">${portraitImg(c)}<div><div class="p-name">${c.name}</div><div class="tags">${mine ? '' : `<span class="tag t3">${ownerName(c)}的猫</span>`}<span class="tag t1">${PERS_NAME[c.pers]}</span><span class="tag t2">Lv.${c.lv}</span><span class="tag">${c.breed}</span></div></div></div>
+<div class="p-head">${portraitImg(c)}<div><div class="p-name">${c.name}</div><div class="tags">${mine ? '' : `<span class="tag t3">${ownerName(c)}的猫</span>`}<span class="tag t4">${stageOf(c, nowMs()).name}</span><span class="tag t1">${PERS_NAME[c.pers]}</span><span class="tag t2">Lv.${c.lv}</span><span class="tag">${c.breed}</span></div></div></div>
 <div class="p-status" id="p-status">${statusText(c)}</div>
 <div class="bars" id="p-bars">${bars(c)}</div>
+<div class="p-grow" id="p-grow">${growText(c)}</div>
 <div class="acts">
 <button class="btn" data-act="pet">撸猫<small>${petLeft(c)}</small></button>
-${mine ? `<button class="btn" data-act="play">逗猫<small>心情 +${GAIN.play}</small></button>` : ''}
+${mine ? `<button class="btn" data-act="play">逗猫<small>心情 +${playGain(c, nowMs())}</small></button>` : ''}
 <button class="btn" data-act="feed">喂食<small>−${PRICES.feed} 猫币</small></button>
 ${mine ? `<button class="btn" data-act="clean">洗香香<small>−${PRICES.clean} 猫币</small></button>
 <button class="btn main wide" data-act="work">派去打工<small>下一版开放</small></button>` : `<p class="p-note">逗猫、洗澡和派去打工只有主人能做。你撸它、喂它，${ownerName(c)}都会收到提示。</p>`}
@@ -148,7 +160,7 @@ function catAction(c: Cat, act: string) {
     c.msg = careLine(c, 'feed');
     perform(a, 'feed', MODE_SECS.feed);
   } else if (act === 'play') {
-    bump(c, 'mood', GAIN.play); bump(c, 'food', -GAIN.playFood);
+    bump(c, 'mood', playGain(c, nowMs())); bump(c, 'food', -GAIN.playFood);
     c.msg = careLine(c, 'play');
     perform(a, 'play', MODE_SECS.play);
   } else if (act === 'clean') {
@@ -219,6 +231,8 @@ export function refreshPanel() {
   const el = document.getElementById('p-bars'), st = document.getElementById('p-status');
   if (el) el.innerHTML = bars(sel.cat);
   if (st) st.innerHTML = statusText(sel.cat);
+  const gr = document.getElementById('p-grow');
+  if (gr) gr.textContent = growText(sel.cat);
 }
 
 export function bindPanel(onHint: () => void) {

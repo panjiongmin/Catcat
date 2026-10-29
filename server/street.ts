@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Cat } from '../src/game/types';
 import type { C2S, S2C, Cmd, CareAct, PlayerInfo } from '../src/net/protocol';
 import { STREET_MAX } from '../src/net/protocol';
-import { settle, bump, tryPet, petGain, GAIN, PRICES } from '../src/game/rules';
+import { settle, bump, tryPet, petGain, playGain, GAIN, PRICES, ADULT_AGE } from '../src/game/rules';
 
 interface Resident { id: string; name: string; coins: number; cap: number }
 /** What each open socket carries across hibernation. */
@@ -32,7 +32,7 @@ export class Street extends DurableObject {
         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);`);
       for (const r of this.sql.exec<Record<string, string | number>>('SELECT id, name, coins, cap FROM residents ORDER BY joined'))
         this.residents.set(String(r.id), { id: String(r.id), name: String(r.name), coins: Number(r.coins), cap: Number(r.cap) });
-      for (const r of this.sql.exec<{ data: string }>('SELECT data FROM cats')) { const c = JSON.parse(r.data) as Cat; this.cats.set(c.id, c); }
+      for (const r of this.sql.exec<{ data: string }>('SELECT data FROM cats')) { const c = JSON.parse(r.data) as Cat; c.born ??= Date.now() - ADULT_AGE; this.cats.set(c.id, c); }
       const m = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 't'").toArray();
       if (m.length) this.t = Number(m[0].v);
     });
@@ -51,7 +51,7 @@ export class Street extends DurableObject {
   private settleAll(now = Date.now()) {
     const h = (now - this.t) / 3.6e6;
     if (h <= 0) return now;
-    for (const c of this.cats.values()) { settle(c, h); this.saveCat(c); }
+    for (const c of this.cats.values()) { settle(c, h, now); this.saveCat(c); }
     this.t = now;
     this.sql.exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('t', ?)", String(now));
     return now;
@@ -151,7 +151,7 @@ export class Street extends DurableObject {
       if (me.coins < PRICES.feed) return this.send(ws, { t: 'err', msg: '猫币不够了' });
       me.coins -= PRICES.feed; bump(c, 'food', GAIN.feed);
     } else if (act === 'play') {
-      bump(c, 'mood', GAIN.play); bump(c, 'food', -GAIN.playFood);
+      bump(c, 'mood', playGain(c, now)); bump(c, 'food', -GAIN.playFood);
     } else if (act === 'clean') {
       if (c.clean >= 95) return this.send(ws, { t: 'err', msg: `${c.name}已经很干净了` });
       if (me.coins < PRICES.clean) return this.send(ws, { t: 'err', msg: '猫币不够了' });
