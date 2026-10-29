@@ -6,6 +6,7 @@ import { goOnline, send } from './net/online';
 import type { Cmd } from './net/protocol';
 import { W } from './world/config';
 import { buildScene } from './world/scene';
+import { applyDaylight, hourNow, periodName } from './world/daylight';
 import { cam, view, applyCam, onCamera, setView, initCam, zoomAt, flyTo, stopFly, toWorld } from './world/camera';
 import { actors, addActor, update, draw, actorAt, syncActors, applyCmd, setDriver, onDecide, setTag } from './world/streetCats';
 import { mountHud, $, toast } from './ui/hud';
@@ -21,7 +22,9 @@ const world = $('world');
 const backSvg = document.getElementById('back') as unknown as SVGSVGElement;
 const frontSvg = document.getElementById('front') as unknown as SVGSVGElement;
 const catCv = $<HTMLCanvasElement>('cats');
-const scene = buildScene(backSvg, frontSvg);
+const lightsSvg = document.getElementById('lights') as unknown as SVGSVGElement;
+const scene = buildScene(backSvg, frontSvg, lightsSvg);
+applyDaylight(world);
 
 // ?reset starts over (handy while testing); ?join=<street> comes from a neighbour's invite link
 const params = new URLSearchParams(location.search);
@@ -38,9 +41,10 @@ onCamera(() => {
   const t = `translate(${cam.x.toFixed(1)} ${cam.y.toFixed(1)}) scale(${cam.k.toFixed(4)})`;
   scene.back.setAttribute('transform', t);
   scene.front.setAttribute('transform', t);
+  scene.lights.setAttribute('transform', t);
   scene.far.setAttribute('transform', `translate(${(-cam.x / cam.k * 0.5).toFixed(1)} 0)`);
   const cx = (view.w / 2 - cam.x) / cam.k;
-  $('coord').textContent = `樱花街 ${clamp(Math.round(cx / 100), 1, Math.round(W / 100))} 号 · 晴`;
+  $('coord').textContent = `樱花街 ${clamp(Math.round(cx / 100), 1, Math.round(W / 100))} 号 · ${periodName(hourNow())}`;
 });
 
 function resize() {
@@ -131,14 +135,16 @@ bindPanel(hideHint);
 bindNeighbours();
 
 // ---------- loop ----------
-let last = performance.now(), acc = 0, saveAcc = 0, time = 0;
+let last = performance.now(), acc = 0, saveAcc = 0, skyAcc = 0, time = 0;
 function tick(t: number) {
   const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt;
   update(dt);
   draw(catCv, time);
   // a lamp post fades while a cat stands right behind it
   for (const l of scene.lamps) l.node.classList.toggle('see', actors.some(a => !a.cat.away && Math.abs(a.cat.x - l.x) < 50));
-  acc += dt; saveAcc += dt;
+  acc += dt; saveAcc += dt; skyAcc += dt;
+  // the sky moves on with the clock
+  if (skyAcc >= 30) { skyAcc = 0; applyDaylight(world); applyCam(); }
   if (acc >= 1) {
     const { back } = settleNow();
     acc = 0;
