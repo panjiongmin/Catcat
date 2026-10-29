@@ -41,6 +41,11 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2E6FD1; out
 .chip.pop { padding-left: 14px; }
 .chip.nb { padding-left: 12px; color: var(--ink); cursor: pointer; font-family: inherit; }
 .chip.nb:hover { background: #FFF1DE; }
+.chip.nb.invite { background: var(--orange); border-color: var(--orange-deep); color: #fff; box-shadow: 0 3px 0 var(--orange-deep); animation: invite-nudge 3s ease-in-out 1s 3; }
+.chip.nb.invite:hover { background: #D96B12; }
+.chip.nb .plus { font-size: 20px; font-weight: 900; line-height: 1; }
+@keyframes invite-nudge { 0%, 80%, 100% { transform: none; } 85% { transform: translateY(-3px); } 90% { transform: none; } 95% { transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .chip.nb.invite { animation: none; } }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #3BA55C; border: 2px solid #2F6B47; flex: none; }
 .dot.off { background: #C9BBAF; border-color: #8F7E70; }
 .dot.wait { background: #FFC145; border-color: #C98A12; }
