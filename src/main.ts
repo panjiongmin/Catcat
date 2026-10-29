@@ -1,14 +1,17 @@
 import '@fontsource/zcool-kuaile/400.css';
 import './style.css';
-import { cats, buildings } from './game/data';
-import { load, resetSave, save, settleNow } from './game/save';
+import { cats, buildings, online, isMine, ownerName } from './game/data';
+import { load, resetSave, save, settleNow, awaySinceSeen } from './game/save';
+import { goOnline, send } from './net/online';
+import type { Cmd } from './net/protocol';
 import { W } from './world/config';
 import { buildScene } from './world/scene';
 import { cam, view, applyCam, onCamera, setView, initCam, zoomAt, flyTo, stopFly, toWorld } from './world/camera';
-import { actors, addActor, update, draw, actorAt } from './world/streetCats';
-import { mountHud, $ } from './ui/hud';
+import { actors, addActor, update, draw, actorAt, syncActors, applyCmd, setDriver, onDecide, setTag } from './world/streetCats';
+import { mountHud, $, toast } from './ui/hud';
 import { showAway } from './ui/away';
-import { bindPanel, closePanel, openBuilding, openStray, refreshHud, refreshPanel, renderDock, selectCat } from './ui/panel';
+import { bindPanel, closePanel, onDid, openBuilding, openStray, pruneSel, refreshHud, refreshPanel, renderDock, selectCat } from './ui/panel';
+import { bindNeighbours, offerJoin, updateNeighbours } from './ui/neighbours';
 
 mountHud($('app'));
 const world = $('world');
@@ -17,9 +20,14 @@ const frontSvg = document.getElementById('front') as unknown as SVGSVGElement;
 const catCv = $<HTMLCanvasElement>('cats');
 const scene = buildScene(backSvg, frontSvg);
 
-// ?reset starts over (handy while testing)
-if (new URLSearchParams(location.search).has('reset')) { resetSave(); history.replaceState(null, '', location.pathname); }
-const away = load();
+// ?reset starts over (handy while testing); ?join=<street> comes from a neighbour's invite link
+const params = new URLSearchParams(location.search);
+if (params.has('reset')) { resetSave(); history.replaceState(null, '', location.pathname); }
+const joinId = params.get('join');
+const hadAccount = (() => { try { return !!localStorage.getItem('catcat.token'); } catch { return false; } })();
+// A returning online player waits for the street; everyone else sees their local cats straight away.
+let away = hadAccount ? null : load();
+if (hadAccount) cats.length = 0;
 for (const c of cats) addActor(c);
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -117,6 +125,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'Escape') closePanel();
 });
 bindPanel(hideHint);
+bindNeighbours();
 
 // ---------- loop ----------
 let last = performance.now(), acc = 0, saveAcc = 0, time = 0;
@@ -134,19 +143,74 @@ function tick(t: number) {
     if (!$('dock').matches(':hover')) renderDock();
   }
   if (saveAcc >= 15) { saveAcc = 0; save(); }
+  if (online.on) flushCmds(dt);
   requestAnimationFrame(tick);
 }
 
 resize();
-initCam(cats[0].x + 260);
+initCam(cats[0]?.x + 260 || buildings.home.x);
 refreshHud();
 renderDock();
-save();
+if (!hadAccount) save();
 if (away) showAway(away);
 requestAnimationFrame(t => { last = t; tick(t); });
 
+// ---------- the shared street ----------
+// The driver tab sends what it decided once a frame, plus everyone's position every few seconds.
+let outbox: Cmd[] = [], posAcc = 0;
+function flushCmds(dt: number) {
+  if (outbox.length) { send({ t: 'cmds', list: outbox }); outbox = []; }
+  posAcc += dt;
+  if (online.driver && posAcc >= 10) {
+    posAcc = 0;
+    send({ t: 'pos', list: cats.map(c => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y) })) });
+  }
+}
+
+let firstInit = true;
+goOnline({
+  cats() {
+    syncActors(cats); pruneSel();
+    onDecide(c => outbox.push(c));
+    setTag(c => isMine(c) ? c.name : `${c.name}·${ownerName(c).slice(0, 4)}`);
+    refreshHud(); renderDock(); updateNeighbours();
+    if (firstInit) {
+      firstInit = false;
+      if (hadAccount) { const me = cats.find(isMine) ?? cats[0]; if (me) initCam(me.x + 260); }
+      const seen = awaySinceSeen();
+      save();
+      if (seen) showAway(seen);
+    }
+  },
+  cmds(list) {
+    for (const c of list) { const a = actors.find(x => x.cat.id === c.id); if (a) applyCmd(a, c); }
+  },
+  did: onDid,
+  presence() { setDriver(online.driver); updateNeighbours(); },
+  error: toast,
+  status(s) {
+    updateNeighbours(s);
+    if (s === 'moved') toast('你在别的页面搬去了新的小街，刷新一下就能看到');
+  },
+}).then(ok => {
+  if (!ok) {
+    // no server (or it is down): keep playing on this device
+    updateNeighbours('offline');
+    if (hadAccount && !cats.length) {
+      away = load();
+      if (!cats.length) resetSave();
+      syncActors(cats); refreshHud(); renderDock(); initCam(cats[0].x + 260);
+      if (away) showAway(away);
+    }
+    if (joinId) toast('连不上小街服务器，邀请暂时用不了');
+    return;
+  }
+  if (joinId) offerJoin(joinId);
+});
+
 // stats follow the real clock: save when the page goes away, settle the gap when it comes back
 document.addEventListener('visibilitychange', () => {
+  if (online.on) send({ t: 'vis', on: !document.hidden });
   if (document.hidden) { settleNow(); save(); return; }
   const gap = settleNow();
   save(); refreshHud(); renderDock(); refreshPanel();

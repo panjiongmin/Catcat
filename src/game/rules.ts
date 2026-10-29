@@ -1,4 +1,4 @@
-import type { Cat } from './data';
+import type { Cat } from './types';
 
 // Starting numbers from the plan, per real hour.
 export const DECAY = { food: 4, clean: 2, mood: 3 };
@@ -14,6 +14,7 @@ const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
 // one slice of time: hunger and dirt build up, a hungry cat sulks twice as fast,
 // health slides while it is starving or filthy and recovers slowly when all is well
 function step(c: Cat, h: number) {
+  if (c.pers === 'lazy') h *= .8; // lazy cats run down 20% slower
   c.food = clamp100(c.food - DECAY.food * h);
   c.clean = clamp100(c.clean - DECAY.clean * h);
   c.mood = clamp100(c.mood - DECAY.mood * h * (c.food < 30 ? 2 : 1));
@@ -30,6 +31,9 @@ export function settle(c: Cat, hours: number) {
 export function bump(c: Cat, key: 'mood' | 'food' | 'clean' | 'health', by: number) {
   c[key] = clamp100(c[key] + by);
 }
+
+/** Aloof cats only take half the mood from a pet. */
+export const petGain = (c: Cat) => c.pers === 'cool' ? GAIN.pet / 2 : GAIN.pet;
 
 /** Record a pet; false once the cat has had enough for this hour. */
 export function tryPet(c: Cat, now = Date.now()) {

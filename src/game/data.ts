@@ -1,25 +1,8 @@
-import type { CoatId, PersId } from '../cats/catkit';
+import type { Cat, PersId } from './types';
+import type { PlayerInfo } from '../net/protocol';
+export type { Cat } from './types';
 import { GROUND } from '../world/config';
 
-export interface Cat {
-  id: string;
-  name: string;
-  breed: string;
-  coat: CoatId;
-  pers: PersId;
-  lv: number;
-  mood: number;
-  health: number;
-  food: number;
-  clean: number;
-  /** Street position (world units). */
-  x: number;
-  y: number;
-  /** Times (ms) of recent pets, for the hourly limit. */
-  pets: number[];
-  /** One-off status line shown in the panel after an action. */
-  msg?: string;
-}
 
 export const PERS_NAME: Record<PersId, string> = { lively: '活泼', cool: '高冷', lazy: '慵懒' };
 
@@ -42,6 +25,14 @@ export const starterCats = (): Cat[] => [
   { id: 'lili', name: '狸狸', breed: '狸花猫', coat: 'lihua', pers: 'lazy', lv: 5, mood: 91, health: 88, food: 70, clean: 80, x: 1330, y: 540, pets: [] },
 ];
 export const cats: Cat[] = starterCats();
+
+/** Online session: who I am, the street's people, whether this tab drives the cats, and server clock skew. */
+export const online = { on: false, me: '', name: '', code: '', street: '', driver: false, offset: 0, players: [] as PlayerInfo[] };
+/** The clock everything is settled on: the server's when online. */
+export const nowMs = () => Date.now() + online.offset;
+export const isMine = (c: Cat) => !online.on || c.owner === online.me;
+export const myCats = () => cats.filter(isMine);
+export const ownerName = (c: Cat) => online.players.find(p => p.id === c.owner)?.name ?? '街坊';
 
 export const buildings: Record<string, Building> = {
   home: { x: 800, y: GROUND, name: '我的家', kind: '设施', desc: '猫咪们吃饭、睡觉、晒太阳的地方。',

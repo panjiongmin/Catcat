@@ -5,16 +5,21 @@
   "description": "猫猫小街：经营自己的猫咪小街",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host",
-    "check": "tsc --noEmit"
+    "dev": "concurrently -k -n web,api -c yellow,cyan \"vite --host\" \"wrangler dev --port 8787\"",
+    "dev:web": "vite --host",
+    "build": "tsc --noEmit && tsc --noEmit -p server && vite build",
+    "preview": "npm run build && wrangler dev --port 8787",
+    "deploy": "npm run build && wrangler deploy",
+    "check": "tsc --noEmit && tsc --noEmit -p server"
   },
   "dependencies": {
     "@fontsource/zcool-kuaile": "^5.2.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261029.1",
+    "concurrently": "^10.0.6",
     "typescript": "~5.9.3",
-    "vite": "^7.3.0"
+    "vite": "^7.3.0",
+    "wrangler": "^4.155.0"
   }
 }

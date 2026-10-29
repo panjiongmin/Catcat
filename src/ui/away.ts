@@ -1,4 +1,4 @@
-import { cats } from '../game/data';
+import { myCats, type Cat } from '../game/data';
 import type { Away } from '../game/save';
 import { portraitImg } from './portrait';
 import { $ } from './hud';
@@ -18,7 +18,7 @@ const delta = (label: string, a: number, b: number) => {
   return d ? `${label} ${d > 0 ? '+' : ''}${d}` : '';
 };
 
-function warning(c: typeof cats[number]) {
+function warning(c: Cat) {
   if (c.health < 40) return '没精神了，先喂饱、洗干净';
   if (c.food < 30) return '饿坏了';
   if (c.clean < 30) return '脏兮兮的';
@@ -33,7 +33,7 @@ export function showAway(away: Away) {
   el.innerHTML = `<div class="away-card">
 <h2 id="away-h">欢迎回来</h2>
 <p>你离开了 ${duration(away.ms)}，猫咪们一直在小街上等你。</p>
-${cats.map(c => {
+${myCats().filter(c => away.before[c.id]).map(c => {
     const b = away.before[c.id];
     const ds = b ? [delta('饱食', b.food, c.food), delta('清洁', b.clean, c.clean), delta('心情', b.mood, c.mood), delta('健康', b.health, c.health)].filter(Boolean).join(' · ') : '';
     const w = warning(c);

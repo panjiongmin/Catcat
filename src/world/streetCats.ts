@@ -1,5 +1,6 @@
 import CatKit, { type ClipName, type Pose } from '../cats/catkit';
 import type { Cat } from '../game/data';
+import type { Cmd } from '../net/protocol';
 import { CAT_SCALE, LANE, W, OUT } from './config';
 import { cam, view } from './camera';
 
@@ -32,6 +33,9 @@ export interface Actor {
   from: Pose | null;
   blend: number;
   blendDur: number;
+  /** Leftover offset after a correction from the network, eased away so cats never visibly jump. */
+  ox: number;
+  oy: number;
 }
 
 export const actors: Actor[] = [];
@@ -39,13 +43,27 @@ export const actors: Actor[] = [];
 export function addActor(cat: Cat): Actor {
   const a: Actor = { cat, dir: Math.random() < .5 ? 1 : -1, act: 'idle', t: rand(0, 2), phase: 0, left: rand(1, 3),
     tx: cat.x, ty: cat.y, next: 'walk', turnTo: 1, held: false, mode: 'roam', busy: 0,
-    last: null, from: null, blend: 0, blendDur: 0 };
+    last: null, from: null, blend: 0, blendDur: 0, ox: 0, oy: 0 };
   actors.push(a);
   return a;
 }
 
-/** Drop every actor (a reset or a reload of the save). */
-export const clearActors = () => { actors.length = 0; };
+/** Match the actors to a cat list: new cats get an actor, departed ones lose theirs. */
+export function syncActors(list: Cat[]) {
+  for (let i = actors.length - 1; i >= 0; i--) if (!list.includes(actors[i].cat)) actors.splice(i, 1);
+  for (const c of list) if (!actors.some(a => a.cat === c)) addActor(c);
+}
+
+// ---------- who decides ----------
+// Offline, this tab decides for every cat. Online, one tab (the street's driver) decides and the
+// others replay its commands, so everyone sees the same cat doing the same thing.
+let driving = true;
+let emit: ((c: Cmd) => void) | null = null;
+export const setDriver = (on: boolean) => { driving = on; };
+export const onDecide = (f: ((c: Cmd) => void) | null) => { emit = f; };
+/** Text on a cat's name tag (online streets add the owner). */
+let tagOf = (c: Cat) => c.name;
+export const setTag = (f: (c: Cat) => string) => { tagOf = f; };
 
 const scaleOf = () => CAT_SCALE * CatKit.K.size;
 
@@ -74,26 +92,47 @@ function decide(a: Actor) {
   const lazy = p === 'lazy', lively = p === 'lively';
   const tired = c.mood < 40 || c.health < 40;
   const odds = { sleep: lazy ? .28 : tired ? .2 : lively ? .04 : .1, sit: lazy ? .18 : p === 'cool' ? .24 : .1, idle: .12, jump: lively && !tired ? .12 : .05 };
-  let acc = odds.sleep;
-  if (r < acc) { setAct(a, 'sleep'); a.left = lazy ? rand(14, 30) : rand(8, 18); return; }
-  if (r < (acc += odds.sit)) { setAct(a, 'sit'); a.left = rand(4, 10); return; }
-  if (r < (acc += odds.idle)) { setAct(a, 'idle'); a.left = rand(1.5, 4); return; }
-  if (r < (acc += odds.jump)) { setAct(a, 'jump'); a.left = CatKit.CLIPS.jump.secs(); return; }
-  const dist = rand(160, lazy ? 360 : 560) * (Math.random() < .5 ? -1 : 1);
-  a.tx = clamp(c.x + dist, 220, W - 220);
-  a.ty = rand(LANE[0], LANE[1]);
-  const far = Math.abs(a.tx - c.x) > 300, kind = Math.random();
-  a.next = far && !tired && kind < (lively ? .6 : lazy ? .05 : .3) ? 'run' : !lazy && kind > .78 ? 'sneak' : 'walk';
-  const dir: Dir = a.tx >= c.x ? 1 : -1;
-  if (dir !== a.dir) { setAct(a, 'turn'); a.left = CatKit.CLIPS.turn.secs(); a.turnTo = dir; }
-  else { setAct(a, a.next); a.left = 99; }
+  const base = { id: c.id, x: c.x, y: c.y, dir: a.dir };
+  let cmd: Cmd, acc = odds.sleep;
+  if (r < acc) cmd = { ...base, act: 'sleep', left: lazy ? rand(14, 30) : rand(8, 18) };
+  else if (r < (acc += odds.sit)) cmd = { ...base, act: 'sit', left: rand(4, 10) };
+  else if (r < (acc += odds.idle)) cmd = { ...base, act: 'idle', left: rand(1.5, 4) };
+  else if (r < (acc += odds.jump)) cmd = { ...base, act: 'jump', left: CatKit.CLIPS.jump.secs() };
+  else {
+    const dist = rand(160, lazy ? 360 : 560) * (Math.random() < .5 ? -1 : 1);
+    const tx = clamp(c.x + dist, 220, W - 220), ty = rand(LANE[0], LANE[1]);
+    const far = Math.abs(tx - c.x) > 300, kind = Math.random();
+    const next: ClipName = far && !tired && kind < (lively ? .6 : lazy ? .05 : .3) ? 'run' : !lazy && kind > .78 ? 'sneak' : 'walk';
+    const dir: Dir = tx >= c.x ? 1 : -1;
+    cmd = dir !== a.dir ? { ...base, act: 'turn', left: CatKit.CLIPS.turn.secs(), tx, ty, next, turnTo: dir }
+      : { ...base, act: next, left: 99, tx, ty };
+  }
+  applyCmd(a, cmd);
+  emit?.(cmd);
 }
 
-/** Hold a cat in place (selected) or release it back to roaming. A sleeping or sitting cat stays put. */
+/** Start a decided action, whether this tab decided it or it came from the street's driver. */
+export function applyCmd(a: Actor, cmd: Cmd) {
+  const c = a.cat;
+  // pick up from where the driver saw the cat, easing out any difference
+  a.ox += c.x - cmd.x; a.oy += c.y - cmd.y;
+  c.x = cmd.x; c.y = cmd.y;
+  if (a.busy > 0) return;
+  setDir(a, cmd.dir);
+  if (cmd.tx != null && cmd.ty != null) { a.tx = cmd.tx; a.ty = cmd.ty; }
+  if (cmd.next) a.next = cmd.next;
+  if (cmd.turnTo) a.turnTo = cmd.turnTo;
+  setAct(a, cmd.act);
+  a.left = cmd.left;
+}
+
+/** Hold a cat in place (selected) or release it back to roaming. A sleeping or sitting cat stays put.
+ *  On an online street the ring is only a highlight: the cat keeps doing what everyone else sees. */
 export function hold(a: Actor, on: boolean) {
   a.held = on;
-  if (on && !a.busy && CatKit.CLIPS[a.act].dist) setAct(a, 'idle');
+  if (on && !emit && !a.busy && CatKit.CLIPS[a.act].dist) setAct(a, 'idle');
 }
+const pinned = (a: Actor) => a.held && !emit;
 
 const MODE_CLIP: Record<Exclude<Mode, 'roam'>, ClipName> = { pet: 'pet', feed: 'eat', play: 'jump', clean: 'sit' };
 /** Play a short interaction in place. */
@@ -114,8 +153,9 @@ export function update(dt: number) {
       if (a.busy <= 0) { a.busy = 0; a.mode = 'roam'; setAct(a, a.held ? 'sit' : 'idle'); a.left = rand(1.5, 3); }
       continue;
     }
+    const k = Math.min(1, dt * 8); a.ox -= a.ox * k; a.oy -= a.oy * k;
     const cl = CatKit.CLIPS[a.act];
-    if (a.held && a.act !== 'turn') { if (cl.dist) setAct(a, 'idle'); a.t += dt; continue; }
+    if (pinned(a) && a.act !== 'turn') { if (cl.dist) setAct(a, 'idle'); a.t += dt; continue; }
     if (cl.dist) {
       // move exactly one gait stride of ground per cycle so paws stay planted
       const S = scaleOf(), stride = cycleLen(cl.dist) * S, v = stride / cl.secs();
@@ -128,7 +168,7 @@ export function update(dt: number) {
     a.t += dt; a.left -= dt;
     if (a.left <= 0) {
       if (a.act === 'turn') { setDir(a, a.turnTo); setAct(a, a.next, .15); a.left = 99; }
-      else decide(a);
+      else if (driving) decide(a);
     }
   }
 }
@@ -195,8 +235,7 @@ function drawBubbles(ctx: CanvasRenderingContext2D, a: Actor, S: number) {
   ctx.globalAlpha = 1;
 }
 
-function drawAbove(ctx: CanvasRenderingContext2D, a: Actor, top: number) {
-  const { x } = a.cat;
+function drawAbove(ctx: CanvasRenderingContext2D, a: Actor, x: number, top: number) {
   let lift = 0;
   if (a.mode === 'pet') {
     ctx.fillStyle = '#FF6B8A';
@@ -216,7 +255,7 @@ function drawAbove(ctx: CanvasRenderingContext2D, a: Actor, top: number) {
     ctx.globalAlpha = 1;
   }
   // name tag
-  const name = a.cat.name;
+  const name = tagOf(a.cat);
   ctx.font = '900 13px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
   const w = ctx.measureText(name).width + 18, ty = top - 8 - lift - 22;
   ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = OUT; ctx.lineWidth = 2;
@@ -237,7 +276,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
   const left = -cam.x / cam.k - 150, right = (view.w - cam.x) / cam.k + 150;
   const order = [...actors].sort((p, q) => p.cat.y - q.cat.y);
   for (const a of order) {
-    const { x, y } = a.cat;
+    const x = a.cat.x + a.ox, y = a.cat.y + a.oy;
     if (x < left || x > right) continue;
     CatKit.use(a.cat.coat, a.cat.pers);
     const S = scaleOf();
@@ -253,7 +292,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
     if (a.mode === 'play') drawYarn(ctx, a, S);
     if (a.mode === 'clean') drawBubbles(ctx, a, S);
     // the tag rides just above the head, wherever the pose puts it
-    drawAbove(ctx, a, y + (p.ky - p.lift - 40) * S);
+    drawAbove(ctx, a, x, y + (p.ky - p.lift - 40) * S);
   }
 }
 
