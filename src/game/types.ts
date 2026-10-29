@@ -2,6 +2,8 @@
 export type CoatId = 'calico' | 'maine' | 'lihua';
 export type PersId = 'lively' | 'cool' | 'lazy';
 export type StageId = 'kitten' | 'junior' | 'adult' | 'senior';
+/** Places a cat can be sent: three jobs and the pet clinic. */
+export type AwayKind = 'cafe' | 'murder' | 'mystery' | 'clinic';
 export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn' | 'sit' | 'sleep' | 'eat' | 'pet';
 
 export interface Cat {
@@ -28,6 +30,8 @@ export interface Cat {
   co?: string;
   /** Pending ask from the owner to a neighbour to raise it together. */
   ask?: { to: string; at: number };
+  /** Out at work or in the clinic until `end` (ms); off the street meanwhile. */
+  away?: { kind: AwayKind; start: number; end: number; pay: number; by?: string };
   /** One-off status line shown in the panel after an action. */
   msg?: string;
 }

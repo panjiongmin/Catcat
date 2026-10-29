@@ -1,5 +1,5 @@
 import { cats, buildings, strays, state, online, nowMs, isMine, myCats, ownCats, ownerName, PERS_NAME, type Cat, type Stray } from '../game/data';
-import { bump, GAIN, PRICES, PET_MAX, petGain, playGain, tryPet, stageOf, growsIn, STAGES } from '../game/rules';
+import { bump, GAIN, PRICES, PET_MAX, petGain, playGain, tryPet, stageOf, growsIn, STAGES, SICK } from '../game/rules';
 import { save } from '../game/save';
 import { send } from '../net/online';
 import type { CareAct, S2C } from '../net/protocol';
@@ -7,6 +7,7 @@ import { cam, flyTo, isPhone, pad, view } from '../world/camera';
 import { actors, hold, perform, type Actor } from '../world/streetCats';
 import { portraitImg } from './portrait';
 import { coAction, coControls, coTag } from './coraise';
+import { awaySpot, awayText, clinicCard, workCard } from './work';
 import { $, toast } from './hud';
 
 type Sel = { cat: Cat } | { b: string } | { stray: Stray } | null;
@@ -30,9 +31,11 @@ const bar = (label: string, v: number) => `<div class="bar"><span>${label}</span
 const bars = (c: Cat) => bar('心情', c.mood) + bar('健康', c.health) + bar('饱食', c.food) + bar('清洁', c.clean);
 
 function statusText(c: Cat) {
+  if (c.away) return awayText(c);
   if (c.msg) return c.msg;
   const a = actorOf(c);
   if (a.act === 'sleep') return `${c.name}睡得正香，肚子一起一伏。`;
+  if (c.health < SICK) return `${c.name}生病了，蔫蔫地趴着。送去宠物医院住两个小时就好。`;
   if (c.health < 40) return `${c.name}没什么精神，吃饱、弄干净以后会慢慢恢复。`;
   if (c.food < 35) return `${c.name}饿了，一直盯着你看。`;
   if (c.clean < 35) return `${c.name}身上脏兮兮的，该洗洗了。`;
@@ -84,13 +87,14 @@ function renderCatPanel(c: Cat) {
 <div class="p-status" id="p-status">${statusText(c)}</div>
 <div class="bars" id="p-bars">${bars(c)}</div>
 <div class="p-grow" id="p-grow">${growText(c)}</div>
-<div class="acts">
+${c.away ? '' : `<div class="acts">
 <button class="btn" data-act="pet">撸猫<small>${petLeft(c)}</small></button>
 ${mine ? `<button class="btn" data-act="play">逗猫<small>心情 +${playGain(c, nowMs())}</small></button>` : ''}
 <button class="btn" data-act="feed">喂食<small>−${PRICES.feed} 猫币</small></button>
 ${mine ? `<button class="btn" data-act="clean">洗香香<small>−${PRICES.clean} 猫币</small></button>
-<button class="btn main wide" data-act="work">派去打工<small>下一版开放</small></button>` : `<p class="p-note">逗猫、洗澡和派去打工只有主人能做。你撸它、喂它，${ownerName(c)}都会收到提示。</p>`}
-</div>${coControls(c)}`;
+<button class="btn main wide" data-act="work">派去打工<small>猫咖 · 剧本杀 · 密室逃脱</small></button>
+${c.health < 60 ? `<button class="btn wide" data-act="clinic">送去宠物医院<small>${c.health < SICK ? '生病了 · ' : ''}−80 猫币</small></button>` : ''}` : `<p class="p-note">逗猫、洗澡和派去打工只有主人能做。你撸它、喂它，${ownerName(c)}都会收到提示。</p>`}
+</div>${coControls(c)}`}`;
 }
 
 const MODE_SECS: Record<CareAct, number> = { pet: 2.4, feed: 3, play: 2.6, clean: 2.6 };
@@ -138,13 +142,18 @@ export function selectCat(id: string) {
   panel().hidden = false;
   renderCatPanel(c);
   renderDock();
-  flyTo(c.x, c.y - 45, isPhone() ? 1.15 : Math.max(cam.k, 1.3), panelOffset());
+  // a cat that is out: look at the place it went
+  if (c.away) { const b = awaySpot(c); flyTo(b.x, b.y - 170, Math.max(cam.k, 1), panelOffset()); }
+  else flyTo(c.x, c.y - 45, isPhone() ? 1.15 : Math.max(cam.k, 1.3), panelOffset());
 }
 
 function catAction(c: Cat, act: string) {
   const a = actorOf(c);
   if (act.startsWith('co-')) return coAction(c, act);
-  if (act === 'work') { toast('派工下一版开放：猫咖 / 剧本杀 / 密室逃脱'); return; }
+  const after = () => { save(); refreshHud(); renderCatPanel(c); renderDock(); };
+  if (act === 'work') return workCard(c, after);
+  if (act === 'clinic') return clinicCard(c, after);
+  if (c.away) return;
   if (a.busy > 0) return;
   // online: the street server checks and applies it, then everyone sees it through onDid
   if (online.on) { if (act === 'pet' || act === 'feed' || act === 'play' || act === 'clean') send({ t: 'do', cat: c.id, act }); return; }
@@ -187,7 +196,7 @@ export function openBuilding(id: string) {
   panel().innerHTML = `<button class="p-close" aria-label="关闭">×</button>
 <div class="p-head"><div><div class="p-name">${b.name}</div><div class="tags"><span class="tag">${b.kind}</span></div></div></div>
 <div class="p-status">${b.desc}</div>
-<div class="rows">${b.info.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>`;
+<div class="rows">${b.info.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}${cats.filter(c => c.away?.kind === id).map(c => `<div><span>${isMine(c) ? '在这里' : `${ownerName(c)}的猫`}</span><b>${c.name} · ${awayText(c, true)}</b></div>`).join('')}</div>`;
   panel().hidden = false;
   renderDock();
   flyTo(b.x, b.y - 170, Math.max(cam.k, 1), panelOffset());
@@ -209,11 +218,13 @@ export function openStray(id: string) {
 
 // ---------- dock ----------
 function dockStatus(c: Cat): [string, string] {
+  if (c.away) return [awayText(c, true), '#6B5648'];
   const a = actorOf(c);
   if (a.mode === 'feed') return ['吃饭中', '#9A4A0E'];
   if (a.mode === 'clean') return ['洗澡中', '#9A4A0E'];
   if (a.mode === 'pet') return ['撒娇中', '#9A4A0E'];
   if (a.mode !== 'roam') return ['玩耍中', '#9A4A0E'];
+  if (c.health < SICK) return ['生病了', '#B83232'];
   if (c.health < 40) return ['没精神', '#B83232'];
   if (c.food < 35) return ['饿了', '#B83232'];
   if (c.clean < 35) return ['脏了', '#B83232'];

@@ -1,5 +1,5 @@
 // Messages between the game and the street server (one WebSocket per open tab).
-import type { Cat, ClipName } from '../game/types';
+import type { AwayKind, Cat, ClipName } from '../game/types';
 
 export type Dir = 1 | -1;
 /** What a cat does next, decided by the street's driver and replayed by every client. */
@@ -29,7 +29,8 @@ export type C2S =
   | { t: 'cmds'; list: Cmd[] }
   | { t: 'pos'; list: { id: string; x: number; y: number }[] }
   | { t: 'do'; cat: string; act: CareAct }
-  | { t: 'co'; cat: string; op: CoOp; to?: string };
+  | { t: 'co'; cat: string; op: CoOp; to?: string }
+  | { t: 'send'; cat: string; to: AwayKind };
 
 export type S2C =
   | { t: 'init'; now: number; you: { id: string; name: string; coins: number; cap: number }; street: string;
@@ -40,7 +41,11 @@ export type S2C =
   | { t: 'did'; cat: string; act: CareAct; by: string; byName: string; stats: Stats; now: number; coins?: number }
   /** A 合养 change; the new cat list follows in a 'cats' message. */
   | { t: 'co'; cat: string; op: CoOp; by: string; byName: string; to?: string }
+  /** Cats back from work or the clinic; `coins` is the new wallet of whoever `to` names. */
+  | { t: 'back'; list: Back[] }
+  | { t: 'wallet'; coins: number }
   | { t: 'err'; msg: string };
+export interface Back { cat: string; kind: AwayKind; pay: number; to?: string; coins?: number }
 
 /** HTTP API answers. */
 export interface Hello { id: string; token: string; code: string; name: string; street: string }

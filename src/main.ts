@@ -12,6 +12,7 @@ import { mountHud, $, toast } from './ui/hud';
 import { showAway } from './ui/away';
 import { bindPanel, closePanel, onDid, openBuilding, openStray, pruneSel, refreshHud, refreshPanel, renderDock, rerenderCat, selectCat } from './ui/panel';
 import { checkAsks, onCo } from './ui/coraise';
+import { onBack } from './ui/work';
 import { bindNeighbours, offerJoin, updateNeighbours } from './ui/neighbours';
 
 mountHud($('app'));
@@ -135,11 +136,13 @@ function tick(t: number) {
   update(dt);
   draw(catCv, time);
   // a lamp post fades while a cat stands right behind it
-  for (const l of scene.lamps) l.node.classList.toggle('see', actors.some(a => Math.abs(a.cat.x - l.x) < 50));
+  for (const l of scene.lamps) l.node.classList.toggle('see', actors.some(a => !a.cat.away && Math.abs(a.cat.x - l.x) < 50));
   acc += dt; saveAcc += dt;
   if (acc >= 1) {
-    settleNow();
+    const { back } = settleNow();
     acc = 0;
+    // single-player: a shift or clinic stay just ended
+    if (back.length) { onBack(back); refreshHud(); rerenderCat(); save(); }
     refreshPanel();
     if (!$('dock').matches(':hover')) renderDock();
   }
@@ -189,6 +192,8 @@ goOnline({
   },
   did: onDid,
   co: onCo,
+  back(list) { onBack(list); refreshHud(); },
+  wallet() { refreshHud(); },
   presence() { setDriver(online.driver); updateNeighbours(); },
   error: toast,
   status(s) {
