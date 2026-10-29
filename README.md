@@ -4,7 +4,7 @@
 
 ## 本地运行
 
-需要 Node.js 20 或更新版本。
+需要 Node.js 22 或更新版本（wrangler 4 的要求；用 nvm 的话：`nvm install 22` 然后 `nvm use 22`）。
 
 ```bash
 npm install
