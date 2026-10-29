@@ -1,4 +1,4 @@
-import type { AwayKind, Cat, PersId, StageId } from './types';
+import type { AwayKind, Box, Cat, PersId, StageId } from './types';
 
 // Starting numbers from the plan, per real hour.
 export const DECAY = { food: 4, clean: 2, mood: 3 };
@@ -74,6 +74,22 @@ export function comeBack(c: Cat, now: number, x: number) {
   c.x = x;
   return a;
 }
+
+// ---------- strays ----------
+/** A stray turns up about every 8 hours, at most 2 boxes at once, and wanders off after 18–36 hours. */
+export const STRAY = { perHour: 1 / 8, stayH: 36, max: 2 };
+/** Move the boxes along by `hours`: expired strays leave, maybe a new one arrives. True if anything changed. */
+export function tickBoxes(boxes: Box[], spots: string[], hours: number, now: number, rand = Math.random) {
+  let changed = false;
+  for (let i = boxes.length - 1; i >= 0; i--) if (boxes[i].until <= now) { boxes.splice(i, 1); changed = true; }
+  const free = spots.filter(s => !boxes.some(b => b.id === s));
+  if (boxes.length < STRAY.max && free.length && rand() < 1 - Math.exp(-STRAY.perHour * Math.min(hours, STRAY.stayH))) {
+    boxes.push(newBox(free[Math.floor(rand() * free.length)], now, rand));
+    changed = true;
+  }
+  return changed;
+}
+export const newBox = (id: string, now: number, rand = Math.random): Box => ({ id, until: now + STRAY.stayH * 3.6e6 * (.5 + rand() * .5) });
 
 // one slice of time: hunger and dirt build up, a hungry cat sulks twice as fast,
 // health slides while it is starving or filthy and recovers slowly when all is well
