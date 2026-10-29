@@ -20,6 +20,13 @@ npm run preview  # 打包后用 wrangler 在本机跑一遍正式版
 
 游戏和服务器是同一个 Worker：静态文件来自 `dist/`，`/api/*` 交给服务器。
 
+合并到 main 后由 GitHub Actions 自动发布（`.github/workflows/deploy.yml`），也可以在 Actions 页面手动点「Run workflow」。仓库需要两个 Secret（Settings → Secrets and variables → Actions）：
+
+- `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 后台右侧栏的「Account ID」
+- `CLOUDFLARE_API_TOKEN`：在 Cloudflare「My Profile → API Tokens → Create Token」用「Edit Cloudflare Workers」模板，Zone Resources 选 887756.xyz，再加一条 Zone · DNS · Edit
+
+想在自己电脑上发布：
+
 ```bash
 npx wrangler login   # 第一次：浏览器里登录你的 Cloudflare 账号
 npm run deploy       # 打包并发布到 https://cat.887756.xyz
