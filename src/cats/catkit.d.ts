@@ -1,7 +1,7 @@
 // Types for the code-drawn cat engine (catkit.js).
 export type CoatId = 'calico' | 'maine' | 'lihua';
 export type PersId = 'lively' | 'cool' | 'lazy';
-export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn';
+export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn' | 'sit' | 'sleep' | 'eat' | 'pet';
 
 /** A pose is a flat bag of numbers (body, legs, head, tail) plus a few face overrides. */
 export interface Pose {
@@ -38,6 +38,8 @@ declare const CatKit: {
   draw(ctx: CanvasRenderingContext2D, pose: Pose): void;
   poseAt(name: ClipName, t: number): Pose;
   portrait(ctx: CanvasRenderingContext2D, overrides?: Partial<Pose>): void;
+  /** Blend two poses (tail angles take the short way round). */
+  mix(a: Pose, b: Pose, t: number): Pose;
   CLIPS: Record<ClipName, Clip>;
   COATS: Record<CoatId, Record<string, unknown>>;
   PERS: Record<PersId, PersProfile>;

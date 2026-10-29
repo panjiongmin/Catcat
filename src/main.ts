@@ -1,12 +1,13 @@
 import '@fontsource/zcool-kuaile/400.css';
 import './style.css';
 import { cats, buildings } from './game/data';
-import { decay } from './game/rules';
+import { load, resetSave, save, settleNow } from './game/save';
 import { W } from './world/config';
 import { buildScene } from './world/scene';
 import { cam, view, applyCam, onCamera, setView, initCam, zoomAt, flyTo, stopFly, toWorld } from './world/camera';
 import { actors, addActor, update, draw, actorAt } from './world/streetCats';
 import { mountHud, $ } from './ui/hud';
+import { showAway } from './ui/away';
 import { bindPanel, closePanel, openBuilding, openStray, refreshHud, refreshPanel, renderDock, selectCat } from './ui/panel';
 
 mountHud($('app'));
@@ -15,6 +16,10 @@ const backSvg = document.getElementById('back') as unknown as SVGSVGElement;
 const frontSvg = document.getElementById('front') as unknown as SVGSVGElement;
 const catCv = $<HTMLCanvasElement>('cats');
 const scene = buildScene(backSvg, frontSvg);
+
+// ?reset starts over (handy while testing)
+if (new URLSearchParams(location.search).has('reset')) { resetSave(); history.replaceState(null, '', location.pathname); }
+const away = load();
 for (const c of cats) addActor(c);
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -114,20 +119,21 @@ window.addEventListener('keydown', e => {
 bindPanel(hideHint);
 
 // ---------- loop ----------
-let last = performance.now(), acc = 0, time = 0;
+let last = performance.now(), acc = 0, saveAcc = 0, time = 0;
 function tick(t: number) {
   const dt = Math.min(0.1, (t - last) / 1000); last = t; time += dt;
   update(dt);
   draw(catCv, time);
   // a lamp post fades while a cat stands right behind it
   for (const l of scene.lamps) l.node.classList.toggle('see', actors.some(a => Math.abs(a.cat.x - l.x) < 50));
-  acc += dt;
+  acc += dt; saveAcc += dt;
   if (acc >= 1) {
-    for (const c of cats) decay(c, acc / 3600);
+    settleNow();
     acc = 0;
     refreshPanel();
     if (!$('dock').matches(':hover')) renderDock();
   }
+  if (saveAcc >= 15) { saveAcc = 0; save(); }
   requestAnimationFrame(tick);
 }
 
@@ -135,4 +141,15 @@ resize();
 initCam(cats[0].x + 260);
 refreshHud();
 renderDock();
+save();
+if (away) showAway(away);
 requestAnimationFrame(t => { last = t; tick(t); });
+
+// stats follow the real clock: save when the page goes away, settle the gap when it comes back
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { settleNow(); save(); return; }
+  const gap = settleNow();
+  save(); refreshHud(); renderDock(); refreshPanel();
+  showAway(gap);
+});
+window.addEventListener('pagehide', () => { settleNow(); save(); });

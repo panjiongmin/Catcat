@@ -21,7 +21,8 @@ export function mountHud(root: HTMLElement) {
   <button id="zhome" aria-label="回到我的家"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C8620F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></button>
 </div>
 <div class="dock"><div class="dock-inner" id="dock"></div></div>
-<div class="toast" id="toast" hidden></div>`;
+<div class="toast" id="toast" hidden></div>
+<div class="away" id="away" hidden role="dialog" aria-modal="true" aria-labelledby="away-h"></div>`;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

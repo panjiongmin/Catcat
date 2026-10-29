@@ -15,6 +15,8 @@ export interface Cat {
   /** Street position (world units). */
   x: number;
   y: number;
+  /** Times (ms) of recent pets, for the hourly limit. */
+  pets: number[];
   /** One-off status line shown in the panel after an action. */
   msg?: string;
 }
@@ -30,13 +32,16 @@ export interface Building {
   info: [string, string][];
 }
 
-export const state = { coins: 500, cap: 6 };
+/** Wallet and the wall-clock time (ms) the stats were last settled to. */
+export const state = { coins: 500, cap: 6, t: Date.now() };
 
-export const cats: Cat[] = [
-  { id: 'huajuan', name: '花卷', breed: '三花猫', coat: 'calico', pers: 'lively', lv: 3, mood: 88, health: 92, food: 64, clean: 75, x: 640, y: 530 },
-  { id: 'lizi', name: '栗子', breed: '缅因猫', coat: 'maine', pers: 'cool', lv: 8, mood: 72, health: 86, food: 38, clean: 60, x: 980, y: 520 },
-  { id: 'lili', name: '狸狸', breed: '狸花猫', coat: 'lihua', pers: 'lazy', lv: 5, mood: 91, health: 88, food: 70, clean: 80, x: 1330, y: 540 },
+/** The cats a new game starts with. */
+export const starterCats = (): Cat[] => [
+  { id: 'huajuan', name: '花卷', breed: '三花猫', coat: 'calico', pers: 'lively', lv: 3, mood: 88, health: 92, food: 64, clean: 75, x: 640, y: 530, pets: [] },
+  { id: 'lizi', name: '栗子', breed: '缅因猫', coat: 'maine', pers: 'cool', lv: 8, mood: 72, health: 86, food: 38, clean: 60, x: 980, y: 520, pets: [] },
+  { id: 'lili', name: '狸狸', breed: '狸花猫', coat: 'lihua', pers: 'lazy', lv: 5, mood: 91, health: 88, food: 70, clean: 80, x: 1330, y: 540, pets: [] },
 ];
+export const cats: Cat[] = starterCats();
 
 export const buildings: Record<string, Building> = {
   home: { x: 800, y: GROUND, name: '我的家', kind: '设施', desc: '猫咪们吃饭、睡觉、晒太阳的地方。',
