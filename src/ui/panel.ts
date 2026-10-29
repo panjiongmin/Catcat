@@ -1,4 +1,4 @@
-import { cats, buildings, strays, state, online, nowMs, isMine, myCats, ownerName, PERS_NAME, type Cat, type Stray } from '../game/data';
+import { cats, buildings, strays, state, online, nowMs, isMine, myCats, ownCats, ownerName, PERS_NAME, type Cat, type Stray } from '../game/data';
 import { bump, GAIN, PRICES, PET_MAX, petGain, playGain, tryPet, stageOf, growsIn, STAGES } from '../game/rules';
 import { save } from '../game/save';
 import { send } from '../net/online';
@@ -6,6 +6,7 @@ import type { CareAct, S2C } from '../net/protocol';
 import { cam, flyTo, isPhone, pad, view } from '../world/camera';
 import { actors, hold, perform, type Actor } from '../world/streetCats';
 import { portraitImg } from './portrait';
+import { coAction, coControls, coTag } from './coraise';
 import { $, toast } from './hud';
 
 type Sel = { cat: Cat } | { b: string } | { stray: Stray } | null;
@@ -45,7 +46,7 @@ function statusText(c: Cat) {
 
 export function refreshHud() {
   $('coins').textContent = fmt(state.coins);
-  $('pop').textContent = `${myCats().length}/${state.cap}`;
+  $('pop').textContent = `${ownCats().length}/${state.cap}`;
 }
 
 function clearSel() {
@@ -79,7 +80,7 @@ function growText(c: Cat) {
 function renderCatPanel(c: Cat) {
   const mine = isMine(c);
   panel().innerHTML = `<button class="p-close" aria-label="关闭">×</button>
-<div class="p-head">${portraitImg(c)}<div><div class="p-name">${c.name}</div><div class="tags">${mine ? '' : `<span class="tag t3">${ownerName(c)}的猫</span>`}<span class="tag t4">${stageOf(c, nowMs()).name}</span><span class="tag t1">${PERS_NAME[c.pers]}</span><span class="tag t2">Lv.${c.lv}</span><span class="tag">${c.breed}</span></div></div></div>
+<div class="p-head">${portraitImg(c)}<div><div class="p-name">${c.name}</div><div class="tags">${coTag(c)}<span class="tag t4">${stageOf(c, nowMs()).name}</span><span class="tag t1">${PERS_NAME[c.pers]}</span><span class="tag t2">Lv.${c.lv}</span><span class="tag">${c.breed}</span></div></div></div>
 <div class="p-status" id="p-status">${statusText(c)}</div>
 <div class="bars" id="p-bars">${bars(c)}</div>
 <div class="p-grow" id="p-grow">${growText(c)}</div>
@@ -89,7 +90,7 @@ ${mine ? `<button class="btn" data-act="play">逗猫<small>心情 +${playGain(c,
 <button class="btn" data-act="feed">喂食<small>−${PRICES.feed} 猫币</small></button>
 ${mine ? `<button class="btn" data-act="clean">洗香香<small>−${PRICES.clean} 猫币</small></button>
 <button class="btn main wide" data-act="work">派去打工<small>下一版开放</small></button>` : `<p class="p-note">逗猫、洗澡和派去打工只有主人能做。你撸它、喂它，${ownerName(c)}都会收到提示。</p>`}
-</div>`;
+</div>${coControls(c)}`;
 }
 
 const MODE_SECS: Record<CareAct, number> = { pet: 2.4, feed: 3, play: 2.6, clean: 2.6 };
@@ -120,6 +121,9 @@ export function onDid(m: Extract<S2C, { t: 'did' }>) {
   renderDock();
 }
 
+/** Redraw the open cat panel (after a 合养 change). */
+export function rerenderCat() { if (sel && 'cat' in sel && !panel().hidden) renderCatPanel(sel.cat); }
+
 /** A cat in the open panel may have moved away with its owner. */
 export function pruneSel() {
   if (sel && 'cat' in sel && !cats.includes(sel.cat)) { sel = null; panel().hidden = true; pad.bottom = 140; }
@@ -139,6 +143,7 @@ export function selectCat(id: string) {
 
 function catAction(c: Cat, act: string) {
   const a = actorOf(c);
+  if (act.startsWith('co-')) return coAction(c, act);
   if (act === 'work') { toast('派工下一版开放：猫咖 / 剧本杀 / 密室逃脱'); return; }
   if (a.busy > 0) return;
   // online: the street server checks and applies it, then everyone sees it through onDid
@@ -195,7 +200,7 @@ export function openStray(id: string) {
   panel().innerHTML = `<button class="p-close" aria-label="关闭">×</button>
 <div class="p-head"><div class="pt mystery">?</div><div><div class="p-name">纸箱里的猫</div><div class="tags"><span class="tag">流浪猫</span><span class="tag">属性未知</span></div></div></div>
 <div class="p-status">纸箱里探出一双眼睛。收养前看不到它的品种、性格和健康状况，只有带回家才知道是什么猫。</div>
-<div class="rows"><div><span>猫位</span><b>${myCats().length} / ${state.cap}</b></div></div>
+<div class="rows"><div><span>猫位</span><b>${ownCats().length} / ${state.cap}</b></div></div>
 <div class="acts"><button class="btn main wide" disabled>收养它<small>后面的版本开放</small></button></div>`;
   panel().hidden = false;
   renderDock();
@@ -221,7 +226,7 @@ export function renderDock() {
   $('dock').innerHTML = myCats().map(c => {
     const [t, col] = dockStatus(c);
     const on = sel && 'cat' in sel && sel.cat === c;
-    return `<button class="dock-cat ${on ? 'on' : ''}" data-id="${c.id}">${portraitImg(c)}<span><span class="n">${c.name}</span><span class="s" style="color:${col}">${t}</span></span></button>`;
+    return `<button class="dock-cat ${on ? 'on' : ''}" data-id="${c.id}">${portraitImg(c)}${c.co ? '<i class="co-mark" title="合养">♥</i>' : ''}<span><span class="n">${c.name}</span><span class="s" style="color:${col}">${t}</span></span></button>`;
   }).join('');
 }
 

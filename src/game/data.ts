@@ -34,9 +34,16 @@ export const cats: Cat[] = starterCats();
 export const online = { on: false, me: '', name: '', code: '', street: '', driver: false, offset: 0, players: [] as PlayerInfo[] };
 /** The clock everything is settled on: the server's when online. */
 export const nowMs = () => Date.now() + online.offset;
-export const isMine = (c: Cat) => !online.on || c.owner === online.me;
+/** Cats I look after: my own, plus any I raise together with a neighbour (合养). */
+export const isMine = (c: Cat) => !online.on || c.owner === online.me || c.co === online.me;
+/** Only the owner's own cats take up their cat slots. */
+export const isOwn = (c: Cat) => !online.on || c.owner === online.me;
 export const myCats = () => cats.filter(isMine);
-export const ownerName = (c: Cat) => online.players.find(p => p.id === c.owner)?.name ?? '街坊';
+export const ownCats = () => cats.filter(isOwn);
+export const playerName = (id?: string) => online.players.find(p => p.id === id)?.name ?? '街坊';
+export const ownerName = (c: Cat) => playerName(c.owner);
+/** The other person raising a 合养 cat with me. */
+export const partnerName = (c: Cat) => playerName(c.owner === online.me ? c.co : c.owner);
 
 export const buildings: Record<string, Building> = {
   home: { x: 800, y: GROUND, name: '我的家', kind: '设施', desc: '猫咪们吃饭、睡觉、晒太阳的地方。',

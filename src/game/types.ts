@@ -24,6 +24,10 @@ export interface Cat {
   pets: number[];
   /** Player who owns the cat (online streets only). */
   owner?: string;
+  /** Neighbour raising the cat together with its owner (合养). */
+  co?: string;
+  /** Pending ask from the owner to a neighbour to raise it together. */
+  ask?: { to: string; at: number };
   /** One-off status line shown in the panel after an action. */
   msg?: string;
 }

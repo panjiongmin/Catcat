@@ -1,20 +1,20 @@
-import { online, myCats } from '../game/data';
+import { cats, online, ownCats } from '../game/data';
 import { inviteLink, joinStreet, loginWithCode, rename, streetInfo } from '../net/online';
 import { STREET_MAX } from '../net/protocol';
-import { $, toast } from './hud';
+import { $, esc, toast } from './hud';
 
 // The 街坊 chip in the HUD, the street card behind it, and the "move to a friend's street" card.
-const esc = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 const modal = () => $('modal');
 const reload = () => location.replace(location.pathname);
 
-function open(html: string) {
+export function openCard(html: string) {
   const el = modal();
   el.innerHTML = `<div class="away-card">${html}</div>`;
   el.hidden = false;
   el.onclick = e => { if (e.target === el || (e.target as HTMLElement).closest('[data-close]')) close(); };
 }
-const close = () => { modal().hidden = true; };
+export const closeCard = () => { modal().hidden = true; };
+const open = openCard, close = closeCard;
 
 /** Chip text: how many neighbours are around right now. */
 export function updateNeighbours(status?: 'online' | 'reconnecting' | 'moved' | 'offline') {
@@ -28,7 +28,12 @@ export function updateNeighbours(status?: 'online' | 'reconnecting' | 'moved' | 
   if (!modal().hidden && modal().querySelector('#nb-list')) $('nb-list').innerHTML = list();
 }
 
-const list = () => online.players.map(p => `<li><i class="dot ${p.online ? '' : 'off'}"></i><b>${esc(p.name)}</b>${p.id === online.me ? '<span class="me">我</span>' : ''}<span class="st">${p.online ? '在线' : '不在'}</span></li>`).join('');
+/** How many cats I raise together with this neighbour. */
+const together = (pid: string) => cats.filter(c => (c.owner === online.me && c.co === pid) || (c.owner === pid && c.co === online.me)).length;
+const list = () => online.players.map(p => {
+  const n = p.id === online.me ? 0 : together(p.id);
+  return `<li><i class="dot ${p.online ? '' : 'off'}"></i><b>${esc(p.name)}</b>${p.id === online.me ? '<span class="me">我</span>' : ''}${n ? `<span class="co">合养 ${n} 只</span>` : ''}<span class="st">${p.online ? '在线' : '不在'}</span></li>`;
+}).join('');
 
 function showStreet() {
   if (!online.on) {
@@ -77,10 +82,11 @@ export async function offerJoin(id: string) {
   if (!info.residents.length) { toast('这条街不存在，链接可能抄错了'); return; }
   const who = info.residents.map(esc).join('、');
   if (info.full) { open(`<h2>这条街住满了</h2><p>${who} 已经把这条街住满了（最多 ${STREET_MAX} 户）。</p><button class="btn main" data-close>好吧</button>`); return; }
-  const n = myCats().length;
+  const n = ownCats().length;
+  const co = cats.filter(c => c.co && (c.owner === online.me || c.co === online.me)).length;
   open(`<h2 id="away-h">搬去新的小街？</h2>
 <p>${who} 邀请你搬过去做街坊。你的 ${n} 只猫和猫币会一起搬走，以后大家能在同一条街上看到彼此的猫，还能互相撸猫、喂猫。</p>
-<p>一个人同时只能住一条街，现在这条街上的街坊会看不到你了。</p>
+<p>一个人同时只能住一条街，现在这条街上的街坊会看不到你了。${co ? `你和街坊合养的 ${co} 只猫会解除合养，猫留在原来的主人家。` : ''}</p>
 <button class="btn main" id="join-ok">带着猫搬过去</button>
 <button class="btn" data-close>先不搬</button>`);
   $('join-ok').onclick = async () => {
