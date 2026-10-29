@@ -18,12 +18,16 @@ export interface Building {
 /** Wallet and the wall-clock time (ms) the stats were last settled to. */
 export const state = { coins: 500, cap: 6, t: Date.now() };
 
-/** The cats a new game starts with. */
-export const starterCats = (): Cat[] => [
-  { id: 'huajuan', name: '花卷', breed: '三花猫', coat: 'calico', pers: 'lively', lv: 3, mood: 88, health: 92, food: 64, clean: 75, x: 640, y: 530, pets: [] },
-  { id: 'lizi', name: '栗子', breed: '缅因猫', coat: 'maine', pers: 'cool', lv: 8, mood: 72, health: 86, food: 38, clean: 60, x: 980, y: 520, pets: [] },
-  { id: 'lili', name: '狸狸', breed: '狸花猫', coat: 'lihua', pers: 'lazy', lv: 5, mood: 91, health: 88, food: 70, clean: 80, x: 1330, y: 540, pets: [] },
-];
+const pick = <T>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
+export const BREEDS: Record<Cat['coat'], string> = { calico: '三花猫', maine: '缅因猫', lihua: '狸花猫' };
+const NAMES = ['团子', '年糕', '豆包', '奶茶', '布丁', '芝麻', '可乐', '汤圆', '饭团', '米粒', '橘子', '雪球', '咖啡', '花生', '桃酥'];
+
+/** A new game starts with one kitten: coat, personality and name are luck of the draw. */
+export const starterCats = (now = Date.now()): Cat[] => {
+  const coat = pick(['calico', 'maine', 'lihua'] as const);
+  return [{ id: `c${now.toString(36)}`, name: pick(NAMES), breed: BREEDS[coat], coat, pers: pick(['lively', 'cool', 'lazy'] as const),
+    lv: 1, born: now, mood: 85, health: 95, food: 70, clean: 80, x: 640, y: 530, pets: [] }];
+};
 export const cats: Cat[] = starterCats();
 
 /** Online session: who I am, the street's people, whether this tab drives the cats, and server clock skew. */

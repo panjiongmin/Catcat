@@ -1,5 +1,6 @@
 import CatKit, { type ClipName, type Pose } from '../cats/catkit';
-import type { Cat } from '../game/data';
+import { nowMs, type Cat } from '../game/data';
+import { stageOf } from '../game/rules';
 import type { Cmd } from '../net/protocol';
 import { CAT_SCALE, LANE, W, OUT } from './config';
 import { cam, view } from './camera';
@@ -65,7 +66,9 @@ export const onDecide = (f: ((c: Cmd) => void) | null) => { emit = f; };
 let tagOf = (c: Cat) => c.name;
 export const setTag = (f: (c: Cat) => string) => { tagOf = f; };
 
-const scaleOf = () => CAT_SCALE * CatKit.K.size;
+const scaleOf = () => CAT_SCALE * CatKit.scale;
+/** Point the engine at this cat: coat, personality and how grown up it is. */
+const useCat = (c: Cat) => CatKit.use(c.coat, c.pers, stageOf(c, nowMs()).id);
 
 // getting down and up again takes longer than a change of gait
 const BLEND: Partial<Record<ClipName, number>> = { sit: .45, sleep: .8, eat: .35, pet: .35 };
@@ -146,7 +149,7 @@ export function perform(a: Actor, mode: Exclude<Mode, 'roam'>, secs: number) {
 export function update(dt: number) {
   for (const a of actors) {
     const c = a.cat;
-    CatKit.use(c.coat, c.pers);
+    useCat(c);
     a.blend += dt;
     if (a.busy > 0) {
       a.t += dt; a.busy -= dt;
@@ -278,7 +281,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
   for (const a of order) {
     const x = a.cat.x + a.ox, y = a.cat.y + a.oy;
     if (x < left || x > right) continue;
-    CatKit.use(a.cat.coat, a.cat.pers);
+    useCat(a.cat);
     const S = scaleOf();
     if (a.held) {
       ctx.strokeStyle = '#E8781F'; ctx.lineWidth = 3; ctx.globalAlpha = .55 + .35 * Math.sin(time * 5);
@@ -292,7 +295,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
     if (a.mode === 'play') drawYarn(ctx, a, S);
     if (a.mode === 'clean') drawBubbles(ctx, a, S);
     // the tag rides just above the head, wherever the pose puts it
-    drawAbove(ctx, a, x, y + (p.ky - p.lift - 40) * S);
+    drawAbove(ctx, a, x, y + (p.ky - p.lift - 40 * CatKit.G.head) * S);
   }
 }
 
@@ -300,7 +303,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
 export function actorAt(wx: number, wy: number): Actor | null {
   const order = [...actors].sort((p, q) => q.cat.y - p.cat.y);
   for (const a of order) {
-    CatKit.use(a.cat.coat, a.cat.pers);
+    useCat(a.cat);
     const S = scaleOf(), { x, y } = a.cat;
     if (Math.abs(wx - x) < 62 * S && wy < y + 10 && wy > y - catTop(S) - 30) return a;
   }
