@@ -13,6 +13,7 @@ export interface NetHandlers {
   cats(): void;
   cmds(list: Cmd[]): void;
   did(m: Extract<S2C, { t: 'did' }>): void;
+  co(m: Extract<S2C, { t: 'co' }>): void;
   presence(): void;
   error(msg: string): void;
   /** Connection state for the HUD. */
@@ -34,7 +35,13 @@ function remember(h: Hello) {
 /** Keep the same Cat objects (actors hold them) and copy the server's version over them. */
 function mergeCats(list: Cat[]) {
   const byId = new Map(cats.map(c => [c.id, c]));
-  const next = list.map(c => { const old = byId.get(c.id); return old ? Object.assign(old, c) : { ...c }; });
+  const next = list.map(c => {
+    const old = byId.get(c.id);
+    if (!old) return { ...c };
+    // fields the server dropped (an ended 合养) go too; msg is this tab's own
+    for (const k of Object.keys(old) as (keyof Cat)[]) if (!(k in c) && k !== 'msg') delete old[k];
+    return Object.assign(old, c);
+  });
   cats.splice(0, cats.length, ...next);
 }
 
@@ -45,7 +52,7 @@ const queue: C2S[] = [];
 
 export function send(m: C2S) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
-  else if (m.t === 'do') handlers?.error('正在重新连接，稍等一下');
+  else if (m.t === 'do' || m.t === 'co') handlers?.error('正在重新连接，稍等一下');
   else if (m.t === 'vis') queue.push(m);
 }
 
@@ -76,6 +83,7 @@ function open(firstInit?: (ok: boolean) => void) {
     } else if (m.t === 'cmds') handlers.cmds(m.list);
     else if (m.t === 'cats') { online.offset = m.now - Date.now(); mergeCats(m.cats); handlers.cats(); }
     else if (m.t === 'did') handlers.did(m);
+    else if (m.t === 'co') handlers.co(m);
     else if (m.t === 'err') handlers.error(m.msg);
   };
   sock.onclose = e => {

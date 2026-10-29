@@ -1,13 +1,15 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Cat } from '../src/game/types';
-import type { C2S, S2C, Cmd, CareAct, PlayerInfo } from '../src/net/protocol';
-import { STREET_MAX } from '../src/net/protocol';
+import type { C2S, S2C, Cmd, CareAct, CoOp, PlayerInfo } from '../src/net/protocol';
+import { STREET_MAX, ASK_TTL } from '../src/net/protocol';
 import { settle, bump, tryPet, petGain, playGain, GAIN, PRICES, ADULT_AGE } from '../src/game/rules';
 
 interface Resident { id: string; name: string; coins: number; cap: number }
 /** What each open socket carries across hibernation. */
 interface Conn { cid: string; pid: string; vis: boolean; at: number }
 
+/** A cat arriving on or leaving a street brings no 合养 with it. */
+const solo = (c: Cat): Cat => { const { co: _co, ask: _ask, ...rest } = c; return rest; };
 const clampXY = (x: number, y: number) => ({ x: Math.max(100, Math.min(3350, x)), y: Math.max(500, Math.min(548, y)) });
 
 /**
@@ -67,7 +69,7 @@ export class Street extends DurableObject {
     const r: Resident = { id: p.id, name: p.name, coins, cap };
     this.residents.set(p.id, r); this.saveResident(r);
     for (const c of cats) {
-      const cat: Cat = { ...c, owner: p.id, ...clampXY(c.x, c.y) };
+      const cat: Cat = { ...solo(c), owner: p.id, ...clampXY(c.x, c.y) };
       this.cats.set(cat.id, cat); this.saveCat(cat);
     }
     this.broadcast({ t: 'cats', cats: [...this.cats.values()], now: Date.now() });
@@ -82,12 +84,14 @@ export class Street extends DurableObject {
     const mine = [...this.cats.values()].filter(c => c.owner === pid);
     for (const c of mine) { this.cats.delete(c.id); this.lastCmd.delete(c.id); }
     this.sql.exec('DELETE FROM cats WHERE owner = ?', pid);
+    // neighbours' cats this player helped raise stay home; the 合养 just ends
+    for (const c of this.cats.values()) if (c.co === pid || c.ask?.to === pid) { delete c.co; delete c.ask; this.saveCat(c); }
     this.sql.exec('DELETE FROM residents WHERE id = ?', pid);
     this.residents.delete(pid);
     for (const ws of this.ctx.getWebSockets()) if (this.conn(ws).pid === pid) ws.close(4000, 'moved');
     this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
     this.presence();
-    return { cats: mine, coins: r?.coins ?? 0 };
+    return { cats: mine.map(solo), coins: r?.coins ?? 0 };
   }
 
   rename(pid: string, name: string) {
@@ -130,6 +134,8 @@ export class Street extends DurableObject {
       for (const p of m.list) { const c = this.cats.get(p.id); if (c) { Object.assign(c, clampXY(p.x, p.y)); this.saveCat(c); } }
     } else if (m.t === 'do') {
       this.care(ws, conn.pid, m.cat, m.act);
+    } else if (m.t === 'co') {
+      this.coRaise(ws, conn.pid, m.cat, m.op, m.to);
     }
   }
 
@@ -140,7 +146,7 @@ export class Street extends DurableObject {
   private care(ws: WebSocket, pid: string, catId: string, act: CareAct) {
     const c = this.cats.get(catId), me = this.residents.get(pid);
     if (!c || !me) return this.send(ws, { t: 'err', msg: '找不到这只猫' });
-    const own = c.owner === pid;
+    const own = c.owner === pid || c.co === pid;
     if ((act === 'play' || act === 'clean') && !own) return this.send(ws, { t: 'err', msg: '只有主人能这样做' });
     const now = this.settleAll();
     if (act === 'pet') {
@@ -160,6 +166,30 @@ export class Street extends DurableObject {
     this.saveCat(c); this.saveResident(me);
     const stats = { mood: c.mood, health: c.health, food: c.food, clean: c.clean, pets: c.pets };
     this.broadcast({ t: 'did', cat: c.id, act, by: pid, byName: me.name, stats, now, coins: me.coins });
+  }
+
+  // ---------- 合养 ----------
+  private coRaise(ws: WebSocket, pid: string, catId: string, op: CoOp, to?: string) {
+    const c = this.cats.get(catId), me = this.residents.get(pid);
+    if (!c || !me) return this.send(ws, { t: 'err', msg: '找不到这只猫' });
+    const now = Date.now(), err = (msg: string) => this.send(ws, { t: 'err', msg });
+    if (op === 'ask') {
+      if (c.owner !== pid) return err('只有主人能找人合养');
+      if (c.co) return err(`${c.name}已经有人一起养了`);
+      if (!to || to === pid || !this.residents.has(to)) return err('找不到这位街坊');
+      c.ask = { to, at: now };
+    } else if (op === 'yes' || op === 'no') {
+      if (c.ask?.to !== pid || now - c.ask.at > ASK_TTL) { delete c.ask; this.saveCat(c); return err('这个邀请已经失效了'); }
+      if (op === 'yes') c.co = pid;
+      delete c.ask;
+    } else if (op === 'end') {
+      if (c.owner !== pid && c.co !== pid) return err('你不是它的主人');
+      if (!c.co && !c.ask) return;
+      delete c.co; delete c.ask;
+    } else return;
+    this.saveCat(c);
+    this.broadcast({ t: 'co', cat: c.id, op, by: pid, byName: me.name, to });
+    this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
   }
 
   // ---------- presence & driver ----------

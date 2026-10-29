@@ -11,7 +11,8 @@ import { cam, view, applyCam, onCamera, setView, initCam, zoomAt, flyTo, stopFly
 import { actors, addActor, update, draw, actorAt, syncActors, applyCmd, setDriver, onDecide, setTag } from './world/streetCats';
 import { mountHud, $, toast } from './ui/hud';
 import { showAway } from './ui/away';
-import { bindPanel, closePanel, onDid, openBuilding, openStray, pruneSel, refreshHud, refreshPanel, renderDock, selectCat } from './ui/panel';
+import { bindPanel, closePanel, onDid, openBuilding, openStray, pruneSel, refreshHud, refreshPanel, renderDock, rerenderCat, selectCat } from './ui/panel';
+import { checkAsks, onCo } from './ui/coraise';
 import { bindNeighbours, offerJoin, updateNeighbours } from './ui/neighbours';
 
 mountHud($('app'));
@@ -178,8 +179,8 @@ goOnline({
   cats() {
     syncActors(cats); pruneSel();
     onDecide(c => outbox.push(c));
-    setTag(c => isMine(c) ? c.name : `${c.name}·${ownerName(c).slice(0, 4)}`);
-    refreshHud(); renderDock(); updateNeighbours();
+    setTag(c => isMine(c) ? (c.co ? `${c.name} ♥` : c.name) : `${c.name}·${ownerName(c).slice(0, 4)}`);
+    refreshHud(); renderDock(); rerenderCat(); updateNeighbours();
     if (firstInit) {
       firstInit = false;
       if (hadAccount) { const me = cats.find(isMine) ?? cats[0]; if (me) initCam(me.x + 260); }
@@ -187,11 +188,13 @@ goOnline({
       save();
       if (seen) showAway(seen);
     }
+    checkAsks();
   },
   cmds(list) {
     for (const c of list) { const a = actors.find(x => x.cat.id === c.id); if (a) applyCmd(a, c); }
   },
   did: onDid,
+  co: onCo,
   presence() { setDriver(online.driver); updateNeighbours(); },
   error: toast,
   status(s) {
