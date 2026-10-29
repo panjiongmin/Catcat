@@ -9,6 +9,7 @@ export function mountHud(root: HTMLElement) {
 <div class="hud-top">
   <div class="place"><b>猫猫小街</b><span id="coord">樱花街 8 号 · 晴</span></div>
   <div class="res">
+    <button class="chip nb" id="nb" type="button"><i class="dot wait"></i>连接中</button>
     <div class="chip" title="猫币"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#FFC145" stroke="#C98A12" stroke-width="2"/><path d="M8 13c1.5 2 6.5 2 8 0" stroke="#7A4E05" stroke-width="2" stroke-linecap="round" fill="none"/></svg><span id="coins">0</span></div>
     <div class="chip pop">猫口 <span id="pop">0/0</span></div>
   </div>
@@ -22,7 +23,8 @@ export function mountHud(root: HTMLElement) {
 </div>
 <div class="dock"><div class="dock-inner" id="dock"></div></div>
 <div class="toast" id="toast" hidden></div>
-<div class="away" id="away" hidden role="dialog" aria-modal="true" aria-labelledby="away-h"></div>`;
+<div class="away" id="away" hidden role="dialog" aria-modal="true" aria-labelledby="away-h"></div>
+<div class="away" id="modal" hidden role="dialog" aria-modal="true"></div>`;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

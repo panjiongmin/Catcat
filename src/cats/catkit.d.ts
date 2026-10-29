@@ -1,7 +1,6 @@
 // Types for the code-drawn cat engine (catkit.js).
-export type CoatId = 'calico' | 'maine' | 'lihua';
-export type PersId = 'lively' | 'cool' | 'lazy';
-export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn' | 'sit' | 'sleep' | 'eat' | 'pet';
+import type { CoatId, PersId, ClipName } from '../game/types';
+export type { CoatId, PersId, ClipName };
 
 /** A pose is a flat bag of numbers (body, legs, head, tail) plus a few face overrides. */
 export interface Pose {
