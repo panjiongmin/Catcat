@@ -3,6 +3,8 @@ export function mountHud(root: HTMLElement) {
   root.innerHTML = `
 <div id="world" role="application" aria-label="猫猫小街，可左右拖动和缩放">
   <svg id="back"></svg>
+  <div id="tint"></div>
+  <svg id="lights"></svg>
   <canvas id="cats"></canvas>
   <svg id="front"></svg>
 </div>
