@@ -2,9 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Cat } from '../src/game/types';
 import type { C2S, S2C, Cmd, CareAct, CoOp, PlayerInfo, Back } from '../src/net/protocol';
 import { STREET_MAX, ASK_TTL } from '../src/net/protocol';
-import { settle, bump, tryPet, petGain, playGain, cantWork, sendAway, comeBack, GAIN, PRICES, CLINIC, ADULT_AGE } from '../src/game/rules';
-import { buildings } from '../src/game/data';
-import type { AwayKind } from '../src/game/types';
+import { settle, bump, tryPet, petGain, playGain, cantWork, sendAway, comeBack, tickBoxes, newBox, GAIN, PRICES, CLINIC, ADULT_AGE } from '../src/game/rules';
+import { buildings, strays, strayCat, STRAY_SPOTS } from '../src/game/data';
+import type { AwayKind, Box } from '../src/game/types';
 
 interface Resident { id: string; name: string; coins: number; cap: number }
 /** What each open socket carries across hibernation. */
@@ -26,6 +26,8 @@ export class Street extends DurableObject {
   private t = Date.now();
   /** Latest command per cat, so a tab that joins mid-walk sees the same thing. Memory only. */
   private lastCmd = new Map<string, Cmd>();
+  /** Cardboard boxes with a stray in them. */
+  private boxes: Box[] = [];
 
   constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
     super(ctx, env);
@@ -39,6 +41,10 @@ export class Street extends DurableObject {
       for (const r of this.sql.exec<{ data: string }>('SELECT data FROM cats')) { const c = JSON.parse(r.data) as Cat; c.born ??= Date.now() - ADULT_AGE; this.cats.set(c.id, c); }
       const m = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 't'").toArray();
       if (m.length) this.t = Number(m[0].v);
+      const b = this.sql.exec<{ v: string }>("SELECT v FROM meta WHERE k = 'boxes'").toArray();
+      if (b.length) this.boxes = JSON.parse(b[0].v) as Box[];
+      // streets from before strays existed get their first box straight away
+      else if (this.residents.size) { this.boxes.push(newBox('s1', Date.now())); this.saveBoxes(); }
     });
   }
 
@@ -69,11 +75,16 @@ export class Street extends DurableObject {
     }
     this.t = now;
     this.sql.exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('t', ?)", String(now));
+    if (tickBoxes(this.boxes, STRAY_SPOTS, h, now)) this.saveBoxes();
     if (back.length) {
       this.broadcast({ t: 'back', list: back });
       this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
     }
     return now;
+  }
+  private saveBoxes() {
+    this.sql.exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('boxes', ?)", JSON.stringify(this.boxes));
+    this.broadcast({ t: 'boxes', list: this.boxes });
   }
   /** Wake up when the next cat is due back, so it comes home even with nobody calling in. */
   private async scheduleNext() {
@@ -90,6 +101,8 @@ export class Street extends DurableObject {
   addResident(p: { id: string; name: string }, cats: Cat[], coins: number, cap = 6): boolean {
     if (!this.residents.has(p.id) && this.residents.size >= STREET_MAX) return false;
     this.settleAll();
+    // a brand-new street starts with one box, so the first thing a player finds is a cat to take in
+    if (!this.residents.size && !this.boxes.length) { this.boxes.push(newBox('s1', Date.now())); this.saveBoxes(); }
     const r: Resident = { id: p.id, name: p.name, coins, cap };
     this.residents.set(p.id, r); this.saveResident(r);
     for (const c of cats) {
@@ -136,7 +149,7 @@ export class Street extends DurableObject {
     ws.serializeAttachment(conn);
     const now = this.settleAll();
     this.send(ws, { t: 'init', now, you: { id: me.id, name: me.name, coins: me.coins, cap: me.cap }, street: req.headers.get('x-street') ?? '',
-      players: this.players(), cats: [...this.cats.values()], cmds: [...this.lastCmd.values()], driver: false });
+      players: this.players(), cats: [...this.cats.values()], cmds: [...this.lastCmd.values()], driver: false, boxes: this.boxes });
     this.presence();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
@@ -157,12 +170,15 @@ export class Street extends DurableObject {
     } else if (m.t === 'pos') {
       if (this.driverCid() !== conn.cid) return;
       for (const p of m.list) { const c = this.cats.get(p.id); if (c) { Object.assign(c, clampXY(p.x, p.y)); this.saveCat(c); } }
+      this.settleAll(); // every ten seconds while someone is around: boxes come and go live
     } else if (m.t === 'do') {
       this.care(ws, conn.pid, m.cat, m.act);
     } else if (m.t === 'co') {
       this.coRaise(ws, conn.pid, m.cat, m.op, m.to);
     } else if (m.t === 'send') {
       await this.sendOut(ws, conn.pid, m.cat, m.to);
+    } else if (m.t === 'adopt') {
+      this.adopt(ws, conn.pid, m.box);
     }
   }
 
@@ -217,6 +233,22 @@ export class Street extends DurableObject {
     this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
     if (to === 'clinic') for (const w of this.live()) if (this.conn(w).pid === pid) this.send(w, { t: 'wallet', coins: me.coins });
     await this.scheduleNext();
+  }
+
+  // ---------- strays ----------
+  private adopt(ws: WebSocket, pid: string, boxId: string) {
+    const me = this.residents.get(pid);
+    if (!me) return;
+    const now = this.settleAll();
+    const i = this.boxes.findIndex(b => b.id === boxId);
+    const spot = strays.find(s => s.id === boxId);
+    if (i < 0 || !spot) return this.send(ws, { t: 'err', msg: '纸箱里的猫已经走了' });
+    if ([...this.cats.values()].filter(c => c.owner === pid).length >= me.cap) return this.send(ws, { t: 'err', msg: '猫位满了，暂时收养不了' });
+    const cat: Cat = { ...strayCat(now), id: `${pid}-${now.toString(36)}`, owner: pid, ...clampXY(spot.x, 530) };
+    this.boxes.splice(i, 1); this.saveBoxes();
+    this.cats.set(cat.id, cat); this.saveCat(cat);
+    this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
+    this.send(ws, { t: 'adopted', cat: cat.id });
   }
 
   // ---------- 合养 ----------

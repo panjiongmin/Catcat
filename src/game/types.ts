@@ -6,6 +6,9 @@ export type StageId = 'kitten' | 'junior' | 'adult' | 'senior';
 export type AwayKind = 'cafe' | 'murder' | 'mystery' | 'clinic';
 export type ClipName = 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'turn' | 'sit' | 'sleep' | 'eat' | 'pet';
 
+/** A cardboard box with a stray in it, at one of the street's box spots, until the cat wanders off. */
+export interface Box { id: string; until: number }
+
 export interface Cat {
   id: string;
   name: string;

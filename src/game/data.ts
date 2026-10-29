@@ -1,4 +1,5 @@
-import type { Cat, PersId } from './types';
+import type { Box, Cat, PersId } from './types';
+import { newBox } from './rules';
 import type { PlayerInfo } from '../net/protocol';
 export type { Cat } from './types';
 import { GROUND } from '../world/config';
@@ -29,6 +30,14 @@ export const starterCats = (now = Date.now()): Cat[] => {
     lv: 1, born: now, mood: 85, health: 95, food: 70, clean: 80, x: 640, y: 530, pets: [] }];
 };
 export const cats: Cat[] = starterCats();
+
+/** A stray from a cardboard box: breed, temperament, age and health are a surprise until it is home. */
+export const strayCat = (now = Date.now(), r = Math.random): Cat => {
+  const coat = pick(['calico', 'maine', 'lihua'] as const), days = r() < .3 ? r() * 2 : r() < .6 ? 2 + r() * 5 : 7 + r() * 40;
+  const n = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
+  return { id: `c${now.toString(36)}`, name: pick(NAMES), breed: BREEDS[coat], coat, pers: pick(['lively', 'cool', 'lazy'] as const),
+    lv: 1, born: now - days * 864e5, mood: n(35, 65), health: r() < .12 ? n(15, 23) : n(55, 90), food: n(15, 50), clean: n(10, 45), x: 0, y: 530, pets: [] };
+};
 
 /** Online session: who I am, the street's people, whether this tab drives the cats, and server clock skew. */
 export const online = { on: false, me: '', name: '', code: '', street: '', driver: false, offset: 0, players: [] as PlayerInfo[] };
@@ -63,7 +72,10 @@ export const buildings: Record<string, Building> = {
 };
 
 export interface Stray { id: string; x: number; y: number }
-/** Cardboard boxes on the edges of the street; adoption opens in a later step. */
+/** Where a cardboard box can turn up, on the edges of the street. */
 export const strays: Stray[] = [
   { id: 's1', x: 120, y: 512 }, { id: 's2', x: 2830, y: 512 }, { id: 's3', x: 3340, y: 512 },
 ];
+export const STRAY_SPOTS = strays.map(s => s.id);
+/** Boxes with a cat in them right now; a new game starts with one to find. */
+export const boxes: Box[] = [newBox('s1', Date.now())];

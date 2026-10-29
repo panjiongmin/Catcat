@@ -8,6 +8,8 @@ import { actors, hold, perform, type Actor } from '../world/streetCats';
 import { portraitImg } from './portrait';
 import { coAction, coControls, coTag } from './coraise';
 import { awaySpot, awayText, clinicCard, workCard } from './work';
+import { adopt, boxAt, roomLeft, staysFor } from './adopt';
+import { addActor } from '../world/streetCats';
 import { $, toast } from './hud';
 
 type Sel = { cat: Cat } | { b: string } | { stray: Stray } | null;
@@ -131,6 +133,8 @@ export function rerenderCat() { if (sel && 'cat' in sel && !panel().hidden) rend
 /** A cat in the open panel may have moved away with its owner. */
 export function pruneSel() {
   if (sel && 'cat' in sel && !cats.includes(sel.cat)) { sel = null; panel().hidden = true; pad.bottom = 140; }
+  // or the stray in the open box was taken in or wandered off
+  if (sel && 'stray' in sel && !boxAt(sel.stray.id)) closePanel();
 }
 
 export function selectCat(id: string) {
@@ -205,12 +209,14 @@ export function openBuilding(id: string) {
 export function openStray(id: string) {
   clearSel();
   const s = strays.find(x => x.id === id)!;
+  if (!boxAt(id)) return closePanel();
   sel = { stray: s };
+  const full = roomLeft() <= 0;
   panel().innerHTML = `<button class="p-close" aria-label="关闭">×</button>
 <div class="p-head"><div class="pt mystery">?</div><div><div class="p-name">纸箱里的猫</div><div class="tags"><span class="tag">流浪猫</span><span class="tag">属性未知</span></div></div></div>
-<div class="p-status">纸箱里探出一双眼睛。收养前看不到它的品种、性格和健康状况，只有带回家才知道是什么猫。</div>
+<div class="p-status">纸箱里探出一双眼睛。收养前看不到它的品种、性格和健康状况，只有带回家才知道是什么猫。${staysFor(id)}，之后会自己走掉。</div>
 <div class="rows"><div><span>猫位</span><b>${ownCats().length} / ${state.cap}</b></div></div>
-<div class="acts"><button class="btn main wide" disabled>收养它<small>后面的版本开放</small></button></div>`;
+<div class="acts"><button class="btn main wide" data-adopt="${id}" ${full ? 'disabled' : ''}>收养它<small>${full ? '猫位满了' : '免费 · 占 1 个猫位'}</small></button></div>`;
   panel().hidden = false;
   renderDock();
   flyTo(s.x, s.y - 40, Math.max(cam.k, 1.4), panelOffset());
@@ -256,6 +262,9 @@ export function bindPanel(onHint: () => void) {
     const btn = (e.target as HTMLElement).closest('button');
     if (!btn) return;
     if (btn.classList.contains('p-close')) return closePanel();
+    if (btn.dataset.adopt) {
+      return adopt(btn.dataset.adopt, c => { addActor(c); closePanel(); refreshHud(); renderDock(); save(); });
+    }
     if (sel && 'cat' in sel && btn.dataset.act) catAction(sel.cat, btn.dataset.act);
   });
   $('dock').addEventListener('click', e => {
