@@ -1,8 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Cat } from '../src/game/types';
-import type { C2S, S2C, Cmd, CareAct, CoOp, PlayerInfo } from '../src/net/protocol';
+import type { C2S, S2C, Cmd, CareAct, CoOp, PlayerInfo, Back } from '../src/net/protocol';
 import { STREET_MAX, ASK_TTL } from '../src/net/protocol';
-import { settle, bump, tryPet, petGain, playGain, GAIN, PRICES, ADULT_AGE } from '../src/game/rules';
+import { settle, bump, tryPet, petGain, playGain, cantWork, sendAway, comeBack, GAIN, PRICES, CLINIC, ADULT_AGE } from '../src/game/rules';
+import { buildings } from '../src/game/data';
+import type { AwayKind } from '../src/game/types';
 
 interface Resident { id: string; name: string; coins: number; cap: number }
 /** What each open socket carries across hibernation. */
@@ -49,15 +51,37 @@ export class Street extends DurableObject {
     this.sql.exec('INSERT INTO residents (id, name, coins, cap, joined) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, coins = excluded.coins, cap = excluded.cap',
       r.id, r.name, r.coins, r.cap, Date.now());
   }
-  /** Bring every cat up to the server clock. */
+  /** Bring every cat up to the server clock, and welcome back whoever's shift or clinic stay is over. */
   private settleAll(now = Date.now()) {
     const h = (now - this.t) / 3.6e6;
     if (h <= 0) return now;
-    for (const c of this.cats.values()) { settle(c, h, now); this.saveCat(c); }
+    const back: Back[] = [];
+    for (const c of this.cats.values()) {
+      settle(c, h, now);
+      const a = c.away && comeBack(c, now, buildings[c.away.kind].x);
+      if (a) {
+        // pay goes to whoever sent the cat, if they still live here, else to the owner
+        const r = this.residents.get(a.by ?? '') ?? this.residents.get(c.owner ?? '');
+        if (r && a.pay) { r.coins += a.pay; this.saveResident(r); }
+        back.push({ cat: c.id, kind: a.kind, pay: a.pay, to: r?.id, coins: r?.coins });
+      }
+      this.saveCat(c);
+    }
     this.t = now;
     this.sql.exec("INSERT OR REPLACE INTO meta (k, v) VALUES ('t', ?)", String(now));
+    if (back.length) {
+      this.broadcast({ t: 'back', list: back });
+      this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
+    }
     return now;
   }
+  /** Wake up when the next cat is due back, so it comes home even with nobody calling in. */
+  private async scheduleNext() {
+    const ends = [...this.cats.values()].flatMap(c => c.away ? [c.away.end] : []);
+    if (ends.length) await this.ctx.storage.setAlarm(Math.min(...ends) + 500);
+    else await this.ctx.storage.deleteAlarm();
+  }
+  async alarm() { this.settleAll(); await this.scheduleNext(); }
 
   // ---------- residents (called from the Worker) ----------
   info() { return { residents: [...this.residents.values()].map(r => r.name), full: this.residents.size >= STREET_MAX }; }
@@ -74,6 +98,7 @@ export class Street extends DurableObject {
     }
     this.broadcast({ t: 'cats', cats: [...this.cats.values()], now: Date.now() });
     this.presence();
+    void this.scheduleNext(); // cats still out at work came along
     return true;
   }
 
@@ -136,6 +161,8 @@ export class Street extends DurableObject {
       this.care(ws, conn.pid, m.cat, m.act);
     } else if (m.t === 'co') {
       this.coRaise(ws, conn.pid, m.cat, m.op, m.to);
+    } else if (m.t === 'send') {
+      await this.sendOut(ws, conn.pid, m.cat, m.to);
     }
   }
 
@@ -149,6 +176,7 @@ export class Street extends DurableObject {
     const own = c.owner === pid || c.co === pid;
     if ((act === 'play' || act === 'clean') && !own) return this.send(ws, { t: 'err', msg: '只有主人能这样做' });
     const now = this.settleAll();
+    if (c.away) return this.send(ws, { t: 'err', msg: `${c.name}现在不在街上` });
     if (act === 'pet') {
       if (!tryPet(c, now)) return this.send(ws, { t: 'err', msg: `${c.name}被摸烦了，过一会儿再来吧` });
       bump(c, 'mood', petGain(c));
@@ -166,6 +194,29 @@ export class Street extends DurableObject {
     this.saveCat(c); this.saveResident(me);
     const stats = { mood: c.mood, health: c.health, food: c.food, clean: c.clean, pets: c.pets };
     this.broadcast({ t: 'did', cat: c.id, act, by: pid, byName: me.name, stats, now, coins: me.coins });
+  }
+
+  // ---------- work and the clinic ----------
+  private async sendOut(ws: WebSocket, pid: string, catId: string, to: AwayKind) {
+    const c = this.cats.get(catId), me = this.residents.get(pid);
+    if (!c || !me || !(to in buildings)) return this.send(ws, { t: 'err', msg: '找不到这只猫' });
+    if (c.owner !== pid && c.co !== pid) return this.send(ws, { t: 'err', msg: '只有主人能这样做' });
+    const now = this.settleAll();
+    if (to === 'clinic') {
+      if (c.away) return this.send(ws, { t: 'err', msg: `${c.name}还没回来` });
+      if (c.health >= CLINIC.health) return this.send(ws, { t: 'err', msg: `${c.name}很健康，不用去医院` });
+      if (me.coins < CLINIC.price) return this.send(ws, { t: 'err', msg: '猫币不够了' });
+      me.coins -= CLINIC.price; this.saveResident(me);
+    } else {
+      const why = cantWork(c, now);
+      if (why) return this.send(ws, { t: 'err', msg: why });
+    }
+    sendAway(c, to, now, pid);
+    this.lastCmd.delete(c.id);
+    this.saveCat(c);
+    this.broadcast({ t: 'cats', cats: [...this.cats.values()], now });
+    if (to === 'clinic') for (const w of this.live()) if (this.conn(w).pid === pid) this.send(w, { t: 'wallet', coins: me.coins });
+    await this.scheduleNext();
   }
 
   // ---------- 合养 ----------

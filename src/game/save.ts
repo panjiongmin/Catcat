@@ -1,14 +1,17 @@
-import { cats, state, starterCats, online, nowMs, myCats, type Cat } from './data';
-import { settle, ADULT_AGE } from './rules';
+import { cats, state, starterCats, online, nowMs, myCats, buildings, type Cat } from './data';
+import { settle, comeBack, ADULT_AGE } from './rules';
+import type { Back } from '../net/protocol';
 
 // Local save. Step 3 moves the same shape to Cloudflare and takes the time from the server.
 const KEY = 'catcat.save.v1';
-const FIELDS = ['id', 'name', 'breed', 'coat', 'pers', 'lv', 'born', 'mood', 'health', 'food', 'clean', 'x', 'y', 'pets'] as const;
+const FIELDS = ['id', 'name', 'breed', 'coat', 'pers', 'lv', 'born', 'mood', 'health', 'food', 'clean', 'x', 'y', 'pets', 'away'] as const;
 type CatSave = Pick<Cat, typeof FIELDS[number]>;
 interface SaveData { v: 1; t: number; coins: number; cap: number; cats: CatSave[] }
 
 export interface Away {
   ms: number;
+  /** Cats that came home from work or the clinic in this stretch (single-player; online the server says so). */
+  back: Back[];
   before: Record<string, Pick<Cat, 'mood' | 'health' | 'food' | 'clean'>>;
 }
 
@@ -32,7 +35,7 @@ function saveSeen() {
 export function awaySinceSeen(): Away | null {
   try {
     const d = JSON.parse(store.get(SEEN) ?? 'null') as { t: number; cats: Away['before'] } | null;
-    return d ? { ms: Math.max(0, nowMs() - d.t), before: d.cats } : null;
+    return d ? { ms: Math.max(0, nowMs() - d.t), before: d.cats, back: [] } : null;
   } catch { return null; }
 }
 
@@ -52,13 +55,15 @@ export function resetSave() {
 /** Bring every cat up to now. Returns what changed while the player was away. */
 export function settleNow(now = nowMs()): Away {
   const ms = Math.max(0, now - state.t);
-  const before: Away['before'] = {};
+  const before: Away['before'] = {}, back: Back[] = [];
   for (const c of cats) {
     before[c.id] = { mood: c.mood, health: c.health, food: c.food, clean: c.clean };
     settle(c, ms / 3.6e6, now);
+    const a = !online.on && c.away && comeBack(c, now, buildings[c.away.kind].x);
+    if (a) { state.coins += a.pay; back.push({ cat: c.id, kind: a.kind, pay: a.pay }); }
   }
   state.t = now;
-  return { ms, before };
+  return { ms, before, back };
 }
 
 /** Load the save if there is one, then settle the time since it was written. */

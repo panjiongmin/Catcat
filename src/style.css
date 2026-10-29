@@ -138,6 +138,13 @@ button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #2E6FD1; out
 .co-pick li { padding: 0; }
 .co-pick button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px; border: 2px solid transparent; border-radius: 14px; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .co-pick button:hover, .co-pick button:focus-visible { border-color: var(--orange); }
+/* job picker */
+.jobs li { padding: 0; }
+.jobs button { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 10px; width: 100%; padding: 10px 14px; border: 2px solid transparent; border-radius: 14px; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.jobs button:hover:not(:disabled), .jobs button:focus-visible { border-color: var(--orange); }
+.jobs button:disabled { opacity: .5; cursor: not-allowed; }
+.jobs .jt { grid-column: 1; font-size: 12px; color: var(--ink-soft); }
+.jobs .jp { grid-column: 2; grid-row: 1 / 3; align-self: center; font-weight: 900; color: #9A6A08; font-variant-numeric: tabular-nums; }
 .co-ask { display: flex; align-items: center; gap: 12px; }
 .co-ask .pt { width: 64px; height: 64px; flex: none; object-fit: contain; }
 .co-ask h2 { font-size: 22px; }

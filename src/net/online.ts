@@ -1,7 +1,7 @@
 import { cats, online, state } from '../game/data';
 import type { Cat } from '../game/types';
 import { localSave } from '../game/save';
-import type { C2S, S2C, Cmd, Hello, StreetInfo } from './protocol';
+import type { C2S, S2C, Cmd, Hello, StreetInfo, Back } from './protocol';
 
 // Talking to the street server: an anonymous account kept in this browser, then one WebSocket to our street.
 const TOKEN = 'catcat.token';
@@ -14,6 +14,10 @@ export interface NetHandlers {
   cmds(list: Cmd[]): void;
   did(m: Extract<S2C, { t: 'did' }>): void;
   co(m: Extract<S2C, { t: 'co' }>): void;
+  /** Cats home from work or the clinic. */
+  back(list: Back[]): void;
+  /** My coins changed outside a care action. */
+  wallet(): void;
   presence(): void;
   error(msg: string): void;
   /** Connection state for the HUD. */
@@ -52,7 +56,7 @@ const queue: C2S[] = [];
 
 export function send(m: C2S) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
-  else if (m.t === 'do' || m.t === 'co') handlers?.error('正在重新连接，稍等一下');
+  else if (m.t === 'do' || m.t === 'co' || m.t === 'send') handlers?.error('正在重新连接，稍等一下');
   else if (m.t === 'vis') queue.push(m);
 }
 
@@ -84,6 +88,10 @@ function open(firstInit?: (ok: boolean) => void) {
     else if (m.t === 'cats') { online.offset = m.now - Date.now(); mergeCats(m.cats); handlers.cats(); }
     else if (m.t === 'did') handlers.did(m);
     else if (m.t === 'co') handlers.co(m);
+    else if (m.t === 'back') {
+      for (const b of m.list) if (b.to === online.me && b.coins != null) state.coins = b.coins;
+      handlers.back(m.list);
+    } else if (m.t === 'wallet') { state.coins = m.coins; handlers.wallet(); }
     else if (m.t === 'err') handlers.error(m.msg);
   };
   sock.onclose = e => {

@@ -1,6 +1,7 @@
 import { myCats, type Cat } from '../game/data';
 import type { Away } from '../game/save';
 import { portraitImg } from './portrait';
+import { awayText, backText } from './work';
 import { $ } from './hud';
 
 /** Only worth a card after a real absence. */
@@ -36,8 +37,9 @@ export function showAway(away: Away) {
 ${myCats().filter(c => away.before[c.id]).map(c => {
     const b = away.before[c.id];
     const ds = b ? [delta('饱食', b.food, c.food), delta('清洁', b.clean, c.clean), delta('心情', b.mood, c.mood), delta('健康', b.health, c.health)].filter(Boolean).join(' · ') : '';
-    const w = warning(c);
-    return `<div class="away-row">${portraitImg(c)}<div><b>${c.name}</b><div class="d">${ds || '没什么变化'}</div>${w ? `<div class="w">${w}</div>` : ''}</div></div>`;
+    const home = away.back.find(x => x.cat === c.id);
+    const w = c.away ? awayText(c) : home ? backText(home) : warning(c);
+    return `<div class="away-row">${portraitImg(c)}<div><b>${c.name}</b><div class="d">${ds || '没什么变化'}</div>${w ? `<div class="${c.away || home ? 'd' : 'w'}">${w}</div>` : ''}</div></div>`;
   }).join('')}
 <button class="btn main" id="away-ok">去看看它们</button>
 </div>`;

@@ -149,6 +149,7 @@ export function perform(a: Actor, mode: Exclude<Mode, 'roam'>, secs: number) {
 export function update(dt: number) {
   for (const a of actors) {
     const c = a.cat;
+    if (c.away) continue; // out at work or in the clinic
     useCat(c);
     a.blend += dt;
     if (a.busy > 0) {
@@ -277,7 +278,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, w, h);
   ctx.setTransform(r * cam.k, 0, 0, r * cam.k, r * cam.x, r * cam.y);
   const left = -cam.x / cam.k - 150, right = (view.w - cam.x) / cam.k + 150;
-  const order = [...actors].sort((p, q) => p.cat.y - q.cat.y);
+  const order = actors.filter(a => !a.cat.away).sort((p, q) => p.cat.y - q.cat.y);
   for (const a of order) {
     const x = a.cat.x + a.ox, y = a.cat.y + a.oy;
     if (x < left || x > right) continue;
@@ -301,7 +302,7 @@ export function draw(cv: HTMLCanvasElement, time: number) {
 
 /** Front-most cat under a world point. */
 export function actorAt(wx: number, wy: number): Actor | null {
-  const order = [...actors].sort((p, q) => q.cat.y - p.cat.y);
+  const order = actors.filter(a => !a.cat.away).sort((p, q) => q.cat.y - p.cat.y);
   for (const a of order) {
     useCat(a.cat);
     const S = scaleOf(), { x, y } = a.cat;
