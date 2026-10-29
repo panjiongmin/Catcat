@@ -245,7 +245,7 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     fnx: 25, fny: 0, ffx: 15, ffy: 0, hnx: -23, hny: 0, hfx: -32, hfy: 0,
     kwf: 0, fnkx: 0, fnky: 0, ffkx: 0, ffky: 0, kwh: 0, hnkx: 0, hnky: 0, hfkx: 0, hfky: 0,
     ta: 2.45, tc: .21, tw: 0, tp: 0, tl: 6.8, tbx: .85, tby: .4,
-    lift: 0, sqx: 1, sqy: 1, bodyFlip: 1, eye: '', blink: 0,
+    lift: 0, sqx: 1, sqy: 1, bodyFlip: 1, eye: '', blink: 0, tailFront: 0,
   };
   const P = (o, b = BASE) => Object.assign({}, b, o);
   const TN = 9;
@@ -345,7 +345,8 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     ctx.scale(K.size * p.sqx, K.size * p.sqy);
     ctx.save(); ctx.scale(p.bodyFlip, 1);
     const F = bodyFrame(p), L = legs(p), tp = tailPts(p, F);
-    tail(ctx, p, tp);
+    // sitting cats wrap the tail round their paws, so it is drawn over the body instead
+    if (!(p.tailFront > .5)) tail(ctx, p, tp);
     legSet(ctx, [L.ff, L.hf], K.far, true);
     legStripes(ctx, [L.ff, L.hf]);
     // body + near legs as one silhouette
@@ -387,6 +388,7 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
       ctx.lineTo(cx - 9, cy + 14); ctx.closePath(); ctx.fill();
       ctx.beginPath(); ctx.moveTo(cx - 3, cy - 12); for (let i = 0; i <= 5; i++) { const yy = cy - 12 + i * 5.2; ctx.quadraticCurveTo(cx + 9, yy + 1, cx + 2 - (i % 2) * 2, yy + 5.2); } ctx.stroke();
     }
+    if (p.tailFront > .5) tail(ctx, p, tp);
     ctx.restore();
     // head stays front-facing whichever way the body points
     ctx.save(); ctx.translate(p.kx * p.bodyFlip, p.ky); ctx.rotate(p.kr * p.bodyFlip); ctx.scale(.9 * p.ks * (p.faceFlip || 1), .9 * p.ks);
@@ -475,6 +477,52 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     S.kr += .1 * Math.sin(Math.PI * u);
     return S;
   }
+  // ---------- resting & care poses ----------
+  // sitting: hips on the ground, chest up, hind legs folded flat, tail wrapped round the front paws
+  function sitBase() {
+    const S = stand();
+    return P({ hx: -15, hy: -22, rh: 21, sx: 7, sy: -52, rs: 19, arch: 1, belly: 1,
+      fnx: 15, fny: 0, ffx: 8, ffy: 0,
+      hnx: 4, hny: 0, hfx: -4, hfy: 0, kwh: 1, hnkx: -24, hnky: -9, hfkx: -30, hfky: -8,
+      kx: S.kx - 18, ky: S.ky - 8, tbx: .95, tby: .25, ta: 2.15, tc: -.28, tailFront: 1 }, S);
+  }
+  function sit(t) {
+    const p = sitBase(), c = TAU * t, b = Math.sin(c);
+    p.sy -= .8 * b; p.ky -= .9 * b; p.rs += .3 * b;
+    p.kr = (M === PERS.lively ? .08 : .04) * Math.sin(c);
+    p.tw = .05 + M.wag * .5; p.tp = c;
+    const bl = seg01(t, .55, .62); p.blink = bl > 0 && bl < 1 ? 1 : 0;
+    return p;
+  }
+  // loaf / nap: belly on the ground, paws tucked, chin resting low
+  function lieBase() {
+    const S = stand();
+    return P({ hx: -25, hy: -19, rh: 19, sx: 14, sy: -20, rs: 19, arch: 2, belly: -1,
+      fnx: 34, fny: 0, ffx: 27, ffy: 0, kwf: 1, fnkx: 19, fnky: -6, ffkx: 13, ffky: -6,
+      hnx: -4, hny: 0, hfx: -10, hfy: 0, kwh: 1, hnkx: -31, hnky: -8, hfkx: -37, hfky: -8,
+      kx: 30, ky: -40, kr: -.06, tbx: .9, tby: .1, ta: 2.95, tc: -.17 }, S);
+  }
+  function sleep(t) {
+    const p = lieBase(), c = TAU * t, b = Math.sin(c);
+    p.hy -= .9 * b; p.sy -= 1.2 * b; p.rs += .5 * b; p.ky -= .5 * b;
+    p.tw = .05; p.tp = c * .5; p.eye = 'closed'; p.mouth = 'w';
+    return p;
+  }
+  // eating: front end lowered over the bowl, chewing
+  function eat(t) {
+    const S = stand(), c = TAU * t, ch = Math.sin(c * 2);
+    return P({ sx: 20, sy: S.sy + 9, arch: 4, kwf: .55, fnkx: 33, fnky: -17, ffkx: 23, ffky: -17, fnx: 27, ffx: 17,
+      kx: 43, ky: -40 + 1.8 * ch, kr: .12, eye: 'closed', mouth: 'w', tw: .1, tp: c,
+      ta: lerp(2.75, 3.6, M.tailUp), tc: .1 }, S);
+  }
+  // being petted: sitting, eyes shut, leaning into the hand and purring
+  function pet(t) {
+    const p = sitBase(), c = TAU * t;
+    p.kr = .16 * Math.sin(c); p.kx += 2 * Math.sin(c);
+    p.sy += .5 * Math.sin(c * 9); p.eye = 'smile'; p.mouth = 'w';
+    p.tw = .14; p.tp = c * 2;
+    return p;
+  }
   const CLIPS = {
     idle: { label: '待机', n: 24, secs: () => 2.4, f: idle },
     walk: { label: '行走', n: 16, secs: () => M.walkT, f: walk, dist: WALK },
@@ -482,6 +530,10 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     sneak: { label: '潜行', n: 16, secs: () => M.walkT * 1.3, f: sneak, dist: SNEAK },
     jump: { label: '原地跳', n: 18, secs: () => 1.1 / (.7 + .3 * M.hop), f: jump, once: 1 },
     turn: { label: '转身', n: 10, secs: () => .7, f: turn, once: 1 },
+    sit: { label: '坐着', n: 24, secs: () => 3, f: sit },
+    sleep: { label: '睡觉', n: 16, secs: () => 3.2, f: sleep },
+    eat: { label: '吃饭', n: 12, secs: () => .9, f: eat },
+    pet: { label: '被摸', n: 16, secs: () => 1.6, f: pet },
   };
   function use(coat, pers) { K = COATS[coat]; M = PERS[pers]; }
   // just the head, centred on the origin: dock and panel avatars
@@ -491,6 +543,6 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     ctx.restore();
   }
   function poseAt(name, t) { return CLIPS[name].f(t); }
-  return { use, draw, poseAt, portrait, CLIPS, COATS, PERS, FW, FH, GY, get M() { return M; }, get K() { return K; } };
+  return { use, draw, poseAt, portrait, mix, CLIPS, COATS, PERS, FW, FH, GY, get M() { return M; }, get K() { return K; } };
 })();
 export default CatKit;
