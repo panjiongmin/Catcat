@@ -22,10 +22,12 @@ npm run preview  # 打包后用 wrangler 在本机跑一遍正式版
 
 ```bash
 npx wrangler login   # 第一次：浏览器里登录你的 Cloudflare 账号
-npm run deploy       # 打包并发布，完成后会打印 https://catcat.<你的子域>.workers.dev
+npm run deploy       # 打包并发布到 https://cat.887756.xyz
 ```
 
 用到 Durable Objects（SQLite 版），Workers 免费套餐就能用，不需要建数据库。
+
+域名写在 `wrangler.jsonc` 的 `routes` 里：`887756.xyz` 要在同一个 Cloudflare 账号下，`cat` 这个子域名事先不能有 DNS 记录，发布时会自动建好。
 
 ## 多人同屏
 
