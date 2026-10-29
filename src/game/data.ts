@@ -1,4 +1,5 @@
-import type { Cat, PersId } from './types';
+import type { Box, Cat, PersId } from './types';
+import { newBox } from './rules';
 import type { PlayerInfo } from '../net/protocol';
 export type { Cat } from './types';
 import { GROUND } from '../world/config';
@@ -30,33 +31,51 @@ export const starterCats = (now = Date.now()): Cat[] => {
 };
 export const cats: Cat[] = starterCats();
 
+/** A stray from a cardboard box: breed, temperament, age and health are a surprise until it is home. */
+export const strayCat = (now = Date.now(), r = Math.random): Cat => {
+  const coat = pick(['calico', 'maine', 'lihua'] as const), days = r() < .3 ? r() * 2 : r() < .6 ? 2 + r() * 5 : 7 + r() * 40;
+  const n = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
+  return { id: `c${now.toString(36)}`, name: pick(NAMES), breed: BREEDS[coat], coat, pers: pick(['lively', 'cool', 'lazy'] as const),
+    lv: 1, born: now - days * 864e5, mood: n(35, 65), health: r() < .12 ? n(15, 23) : n(55, 90), food: n(15, 50), clean: n(10, 45), x: 0, y: 530, pets: [] };
+};
+
 /** Online session: who I am, the street's people, whether this tab drives the cats, and server clock skew. */
 export const online = { on: false, me: '', name: '', code: '', street: '', driver: false, offset: 0, players: [] as PlayerInfo[] };
 /** The clock everything is settled on: the server's when online. */
 export const nowMs = () => Date.now() + online.offset;
-export const isMine = (c: Cat) => !online.on || c.owner === online.me;
+/** Cats I look after: my own, plus any I raise together with a neighbour (合养). */
+export const isMine = (c: Cat) => !online.on || c.owner === online.me || c.co === online.me;
+/** Only the owner's own cats take up their cat slots. */
+export const isOwn = (c: Cat) => !online.on || c.owner === online.me;
 export const myCats = () => cats.filter(isMine);
-export const ownerName = (c: Cat) => online.players.find(p => p.id === c.owner)?.name ?? '街坊';
+export const ownCats = () => cats.filter(isOwn);
+export const playerName = (id?: string) => online.players.find(p => p.id === id)?.name ?? '街坊';
+export const ownerName = (c: Cat) => playerName(c.owner);
+/** The other person raising a 合养 cat with me. */
+export const partnerName = (c: Cat) => playerName(c.owner === online.me ? c.co : c.owner);
 
 export const buildings: Record<string, Building> = {
   home: { x: 800, y: GROUND, name: '我的家', kind: '设施', desc: '猫咪们吃饭、睡觉、晒太阳的地方。',
     info: [['人口', '3 / 6'], ['房屋等级', '客厅 Lv.1'], ['下一级', '解锁阳台，+2 猫位']] },
   shop: { x: 420, y: GROUND, name: '猫粮铺', kind: '设施', desc: '猫粮、猫砂、玩具和家具都在这里买。',
     info: [['猫粮', '20 猫币 · 饱食 +35'], ['猫砂', '10 猫币 · 清洁 +40'], ['新到', '猫爬架·云朵款']] },
-  cafe: { x: 1210, y: GROUND, name: '猫咖', kind: '打工场所', desc: '最适合新手猫咪的工作，客人很温柔。',
-    info: [['单班', '1 小时 · 60 猫币'], ['开放', '下一版开放派工']] },
+  cafe: { x: 1210, y: GROUND, name: '猫咖', kind: '打工场所', desc: '最适合新手猫咪的工作，客人很温柔。活泼的猫在这里工钱多两成。',
+    info: [['单班', '1 小时 · 60 猫币'], ['怎么去', '点自己的猫 → 派去打工']] },
   clinic: { x: 1900, y: GROUND, name: '宠物医院', kind: '设施', desc: '生病的猫咪在这里住院治疗，猫咪不会死掉，只会住院。',
-    info: [['住院', '2 小时 · 80 猫币'], ['开放', '下一版开放']] },
+    info: [['住院', '2 小时 · 80 猫币'], ['出院', '健康回到 80'], ['怎么去', '点生病的猫 → 送去医院']] },
   books: { x: 2240, y: GROUND, name: '书店 · 花店', kind: '装修中', desc: '还在装修，之后会开放更多玩法。',
     info: [['状态', '装修中']] },
-  murder: { x: 2600, y: GROUND, name: '剧本杀', kind: '打工场所', desc: '猫咪扮演神秘角色，偶尔会“神演技”拿到额外打赏。',
-    info: [['单班', '3 小时 · 200 猫币'], ['开放', '下一版开放派工']] },
+  murder: { x: 2600, y: GROUND, name: '剧本杀', kind: '打工场所', desc: '猫咪扮演神秘角色。高冷的猫最入戏，工钱多两成。',
+    info: [['单班', '3 小时 · 200 猫币'], ['怎么去', '点自己的猫 → 派去打工']] },
   mystery: { x: 3040, y: GROUND, name: '密室逃脱', kind: '打工场所', desc: '收益最高也最累，下班后记得让猫好好休息。',
-    info: [['单班', '8 小时 · 500 猫币'], ['开放', '下一版开放派工']] },
+    info: [['单班', '8 小时 · 500 猫币'], ['怎么去', '点自己的猫 → 派去打工']] },
 };
 
 export interface Stray { id: string; x: number; y: number }
-/** Cardboard boxes on the edges of the street; adoption opens in a later step. */
+/** Where a cardboard box can turn up, on the edges of the street. */
 export const strays: Stray[] = [
   { id: 's1', x: 120, y: 512 }, { id: 's2', x: 2830, y: 512 }, { id: 's3', x: 3340, y: 512 },
 ];
+export const STRAY_SPOTS = strays.map(s => s.id);
+/** Boxes with a cat in them right now; a new game starts with one to find. */
+export const boxes: Box[] = [newBox('s1', Date.now())];

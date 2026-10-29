@@ -1,7 +1,7 @@
-import { cats, online, state } from '../game/data';
+import { boxes, cats, online, state } from '../game/data';
 import type { Cat } from '../game/types';
 import { localSave } from '../game/save';
-import type { C2S, S2C, Cmd, Hello, StreetInfo } from './protocol';
+import type { C2S, S2C, Cmd, Hello, StreetInfo, Back } from './protocol';
 
 // Talking to the street server: an anonymous account kept in this browser, then one WebSocket to our street.
 const TOKEN = 'catcat.token';
@@ -13,6 +13,15 @@ export interface NetHandlers {
   cats(): void;
   cmds(list: Cmd[]): void;
   did(m: Extract<S2C, { t: 'did' }>): void;
+  co(m: Extract<S2C, { t: 'co' }>): void;
+  /** Cats home from work or the clinic. */
+  back(list: Back[]): void;
+  /** My coins changed outside a care action. */
+  wallet(): void;
+  /** Stray boxes came or went. */
+  boxes(): void;
+  /** I just adopted this cat. */
+  adopted(id: string): void;
   presence(): void;
   error(msg: string): void;
   /** Connection state for the HUD. */
@@ -34,7 +43,13 @@ function remember(h: Hello) {
 /** Keep the same Cat objects (actors hold them) and copy the server's version over them. */
 function mergeCats(list: Cat[]) {
   const byId = new Map(cats.map(c => [c.id, c]));
-  const next = list.map(c => { const old = byId.get(c.id); return old ? Object.assign(old, c) : { ...c }; });
+  const next = list.map(c => {
+    const old = byId.get(c.id);
+    if (!old) return { ...c };
+    // fields the server dropped (an ended 合养) go too; msg is this tab's own
+    for (const k of Object.keys(old) as (keyof Cat)[]) if (!(k in c) && k !== 'msg') delete old[k];
+    return Object.assign(old, c);
+  });
   cats.splice(0, cats.length, ...next);
 }
 
@@ -45,7 +60,7 @@ const queue: C2S[] = [];
 
 export function send(m: C2S) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
-  else if (m.t === 'do') handlers?.error('正在重新连接，稍等一下');
+  else if (m.t === 'do' || m.t === 'co' || m.t === 'send' || m.t === 'adopt') handlers?.error('正在重新连接，稍等一下');
   else if (m.t === 'vis') queue.push(m);
 }
 
@@ -64,7 +79,8 @@ function open(firstInit?: (ok: boolean) => void) {
       state.coins = m.you.coins; state.cap = m.you.cap; state.t = m.now;
       online.name = m.you.name;
       mergeCats(m.cats);
-      handlers.cats();
+      boxes.splice(0, boxes.length, ...m.boxes);
+      handlers.cats(); handlers.boxes();
       if (m.cmds.length) handlers.cmds(m.cmds);
       handlers.status('online');
       while (queue.length) sock.send(JSON.stringify(queue.shift()));
@@ -76,6 +92,13 @@ function open(firstInit?: (ok: boolean) => void) {
     } else if (m.t === 'cmds') handlers.cmds(m.list);
     else if (m.t === 'cats') { online.offset = m.now - Date.now(); mergeCats(m.cats); handlers.cats(); }
     else if (m.t === 'did') handlers.did(m);
+    else if (m.t === 'co') handlers.co(m);
+    else if (m.t === 'back') {
+      for (const b of m.list) if (b.to === online.me && b.coins != null) state.coins = b.coins;
+      handlers.back(m.list);
+    } else if (m.t === 'wallet') { state.coins = m.coins; handlers.wallet(); }
+    else if (m.t === 'boxes') { boxes.splice(0, boxes.length, ...m.list); handlers.boxes(); }
+    else if (m.t === 'adopted') handlers.adopted(m.cat);
     else if (m.t === 'err') handlers.error(m.msg);
   };
   sock.onclose = e => {

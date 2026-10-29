@@ -3,6 +3,8 @@ export function mountHud(root: HTMLElement) {
   root.innerHTML = `
 <div id="world" role="application" aria-label="猫猫小街，可左右拖动和缩放">
   <svg id="back"></svg>
+  <div id="tint"></div>
+  <svg id="lights"></svg>
   <canvas id="cats"></canvas>
   <svg id="front"></svg>
 </div>
@@ -29,6 +31,8 @@ export function mountHud(root: HTMLElement) {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 export { $ };
+/** Names come from players: escape them before they go into HTML. */
+export const esc = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`);
 
 let toastT = 0;
 export function toast(msg: string) {
