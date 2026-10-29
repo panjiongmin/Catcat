@@ -1,5 +1,6 @@
 import CatKit from '../cats/catkit';
-import type { Cat } from '../game/data';
+import { nowMs, type Cat } from '../game/data';
+import { stageOf } from '../game/rules';
 
 const cache = new Map<string, string>();
 
@@ -13,13 +14,13 @@ function face(c: Cat): Record<string, string> {
 
 /** A head-only avatar as an image URL, cached per look. */
 export function portraitURL(c: Cat): string {
-  const f = face(c), key = `${c.coat}|${c.pers}|${f.eye ?? ''}|${f.mouth ?? ''}`;
+  const f = face(c), st = stageOf(c, nowMs()).id, key = `${c.coat}|${c.pers}|${st}|${f.eye ?? ''}|${f.mouth ?? ''}`;
   let url = cache.get(key);
   if (!url) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 160;
     const ctx = cv.getContext('2d')!;
-    CatKit.use(c.coat, c.pers);
+    CatKit.use(c.coat, c.pers, st);
     ctx.translate(80, 92); ctx.scale(1.6, 1.6);
     CatKit.portrait(ctx, f);
     url = cv.toDataURL();

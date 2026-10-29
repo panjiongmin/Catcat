@@ -1,9 +1,9 @@
 import { cats, state, starterCats, online, nowMs, myCats, type Cat } from './data';
-import { settle } from './rules';
+import { settle, ADULT_AGE } from './rules';
 
 // Local save. Step 3 moves the same shape to Cloudflare and takes the time from the server.
 const KEY = 'catcat.save.v1';
-const FIELDS = ['id', 'name', 'breed', 'coat', 'pers', 'lv', 'mood', 'health', 'food', 'clean', 'x', 'y', 'pets'] as const;
+const FIELDS = ['id', 'name', 'breed', 'coat', 'pers', 'lv', 'born', 'mood', 'health', 'food', 'clean', 'x', 'y', 'pets'] as const;
 type CatSave = Pick<Cat, typeof FIELDS[number]>;
 interface SaveData { v: 1; t: number; coins: number; cap: number; cats: CatSave[] }
 
@@ -55,7 +55,7 @@ export function settleNow(now = nowMs()): Away {
   const before: Away['before'] = {};
   for (const c of cats) {
     before[c.id] = { mood: c.mood, health: c.health, food: c.food, clean: c.clean };
-    settle(c, ms / 3.6e6);
+    settle(c, ms / 3.6e6, now);
   }
   state.t = now;
   return { ms, before };
@@ -69,7 +69,7 @@ export function load(): Away | null {
     const d = JSON.parse(raw) as SaveData;
     if (d.v !== 1 || !Array.isArray(d.cats) || !d.cats.length) return null;
     state.coins = d.coins; state.cap = d.cap; state.t = d.t;
-    cats.splice(0, cats.length, ...d.cats.map(c => ({ ...c, pets: c.pets ?? [] })));
+    cats.splice(0, cats.length, ...d.cats.map(c => ({ ...c, pets: c.pets ?? [], born: c.born ?? d.t - ADULT_AGE })));
     return settleNow();
   } catch {
     return null;

@@ -236,7 +236,15 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     lazy: { face: { eye: 'lazy', eyeR: 7.5, mouth: 'w', mouthK: .8, blush: .25, earA: .55, earR: .35 },
       walkT: 1.05, runT: .62, lift: 3.5, bob: .9, headY: 7, tailUp: 0, wag: .1, hop: .5 },
   };
-  let K = null, M = null;
+  // growth stages: kittens are small with a big head and big eyes and patter quickly; seniors amble
+  const STAGES = {
+    kitten: { size: .58, head: 1.42, eye: 1.18, tail: .7, pace: .8 },
+    junior: { size: .8, head: 1.16, eye: 1.08, tail: .88, pace: .9 },
+    adult: { size: 1, head: 1, eye: 1, tail: 1, pace: 1 },
+    senior: { size: .98, head: 1, eye: .9, tail: 1, pace: 1.25, sag: 1 },
+  };
+  let K = null, M = null, G = STAGES.adult;
+  const SZ = () => K.size * G.size;
 
   // ---------- pose ----------
   const BASE = {
@@ -324,7 +332,7 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     const A = p.tA || tailAngles(p), pts = [F.loc(-p.rh * p.tbx, -p.rh * p.tby)];
     for (let i = 0; i < TN; i++) {
       const a = A[i] + p.tw * Math.sin(p.tp + i * .55) * (.25 + i / TN), q = pts[i];
-      pts.push([q[0] + Math.cos(a) * p.tl, Math.min(-5 * K.tailW, q[1] + Math.sin(a) * p.tl)]);
+      pts.push([q[0] + Math.cos(a) * p.tl * G.tail, Math.min(-5 * K.tailW, q[1] + Math.sin(a) * p.tl * G.tail)]);
     }
     return pts;
   }
@@ -337,12 +345,14 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
 
   // ---------- draw ----------
   function draw(ctx, p) {
+    // an old cat's back dips and its head hangs a little lower
+    if (G.sag) p = Object.assign({}, p, { belly: p.belly + 2.5, arch: p.arch - 1.5, ky: p.ky + 4 });
     ctx.save();
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     const sh = 1 / (1 + p.lift / 30);
-    ctx.fillStyle = `rgba(70,52,40,${.16 * sh})`; ell(ctx, (p.hx + p.sx) / 2 * K.size + 2, 0, 44 * sh * K.size, 5 * sh); ctx.fill();
+    ctx.fillStyle = `rgba(70,52,40,${.16 * sh})`; ell(ctx, (p.hx + p.sx) / 2 * SZ() + 2, 0, 44 * sh * SZ(), 5 * sh); ctx.fill();
     ctx.translate(0, -p.lift);
-    ctx.scale(K.size * p.sqx, K.size * p.sqy);
+    ctx.scale(SZ() * p.sqx, SZ() * p.sqy);
     ctx.save(); ctx.scale(p.bodyFlip, 1);
     const F = bodyFrame(p), L = legs(p), tp = tailPts(p, F);
     // sitting cats wrap the tail round their paws, so it is drawn over the body instead
@@ -391,7 +401,7 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     if (p.tailFront > .5) tail(ctx, p, tp);
     ctx.restore();
     // head stays front-facing whichever way the body points
-    ctx.save(); ctx.translate(p.kx * p.bodyFlip, p.ky); ctx.rotate(p.kr * p.bodyFlip); ctx.scale(.9 * p.ks * (p.faceFlip || 1), .9 * p.ks);
+    ctx.save(); ctx.translate(p.kx * p.bodyFlip, p.ky); ctx.rotate(p.kr * p.bodyFlip); ctx.scale(.9 * p.ks * G.head * (p.faceFlip || 1), .9 * p.ks * G.head);
     Face.draw(ctx, faceStyle(p));
     ctx.restore();
     ctx.restore();
@@ -399,6 +409,9 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
   function faceStyle(p) {
     const f = Object.assign({}, FACE0, { coat: K.coat, tuft: K.tuft, fluff: K.fluff, earS: K.earS, W: K.W || 34, iris: K.iris,
       pal: { cream: K.base, char: K.char, orange: K.orange, pink: K.pink, muzzle: K.muzzle, stripe: K.stripe } }, M.face);
+    f.eyeR = (f.eyeR || 6) * G.eye;
+    // seniors: grey whiskers and soft brows
+    if (G.sag) { f.brows = .9; f.whCol = '#b5a89e'; }
     if (p.blink > .5) f.eye = 'closed';
     if (p.eye) f.eye = p.eye;
     if (p.mouth) f.mouth = p.mouth;
@@ -525,9 +538,9 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
   }
   const CLIPS = {
     idle: { label: '待机', n: 24, secs: () => 2.4, f: idle },
-    walk: { label: '行走', n: 16, secs: () => M.walkT, f: walk, dist: WALK },
-    run: { label: '小跑', n: 12, secs: () => M.runT, f: run, dist: RUN },
-    sneak: { label: '潜行', n: 16, secs: () => M.walkT * 1.3, f: sneak, dist: SNEAK },
+    walk: { label: '行走', n: 16, secs: () => M.walkT * G.pace, f: walk, dist: WALK },
+    run: { label: '小跑', n: 12, secs: () => M.runT * G.pace, f: run, dist: RUN },
+    sneak: { label: '潜行', n: 16, secs: () => M.walkT * 1.3 * G.pace, f: sneak, dist: SNEAK },
     jump: { label: '原地跳', n: 18, secs: () => 1.1 / (.7 + .3 * M.hop), f: jump, once: 1 },
     turn: { label: '转身', n: 10, secs: () => .7, f: turn, once: 1 },
     sit: { label: '坐着', n: 24, secs: () => 3, f: sit },
@@ -535,7 +548,7 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     eat: { label: '吃饭', n: 12, secs: () => .9, f: eat },
     pet: { label: '被摸', n: 16, secs: () => 1.6, f: pet },
   };
-  function use(coat, pers) { K = COATS[coat]; M = PERS[pers]; }
+  function use(coat, pers, stage = 'adult') { K = COATS[coat]; M = PERS[pers]; G = STAGES[stage] || STAGES.adult; }
   // just the head, centred on the origin: dock and panel avatars
   function portrait(ctx, o = {}) {
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -543,6 +556,6 @@ return { draw(c, s) { ctx = c; drawHead(s); } };
     ctx.restore();
   }
   function poseAt(name, t) { return CLIPS[name].f(t); }
-  return { use, draw, poseAt, portrait, mix, CLIPS, COATS, PERS, FW, FH, GY, get M() { return M; }, get K() { return K; } };
+  return { use, draw, poseAt, portrait, mix, CLIPS, COATS, PERS, STAGES, FW, FH, GY, get M() { return M; }, get K() { return K; }, get G() { return G; }, get scale() { return SZ(); } };
 })();
 export default CatKit;
